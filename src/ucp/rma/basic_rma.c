@@ -12,6 +12,7 @@
 #include <ucp/core/ucp_context.h>
 #include <ucp/dt/dt_contig.h>
 #include <ucs/datastruct/mpool.inl>
+#include <ucs/debug/instrument.h>
 
 
 #define UCP_RMA_CHECK_PARAMS(_buffer, _length) \
@@ -30,6 +31,7 @@ ucs_status_t ucp_put(ucp_ep_h ep, const void *buffer, size_t length,
     size_t frag_length;
     ssize_t packed_len;
 
+    UCS_INSTRUMENT_RECORD(UCS_INSTRUMENT_TYPE_TX, "ucp_put_start", length);
     UCP_RMA_CHECK_PARAMS(buffer, length);
 
     uct_rkey = UCP_RKEY_LOOKUP(ep, rkey);
@@ -74,6 +76,7 @@ ucs_status_t ucp_put(ucp_ep_h ep, const void *buffer, size_t length,
         ucp_worker_progress(ep->worker);
     }
 
+    UCS_INSTRUMENT_RECORD(UCS_INSTRUMENT_TYPE_TX, "ucp_put_finish", status);
     return status;
 }
 
@@ -152,6 +155,7 @@ ucs_status_t ucp_put_nbi(ucp_ep_h ep, const void *buffer, size_t length,
     ssize_t packed_len;
     ucp_request_t *req;
 
+    UCS_INSTRUMENT_RECORD(UCS_INSTRUMENT_TYPE_TX, "ucp_put_nbi_start", length);
     UCP_RMA_CHECK_PARAMS(buffer, length);
 
     uct_rkey = UCP_RKEY_LOOKUP(ep, rkey);
@@ -221,6 +225,7 @@ ucs_status_t ucp_put_nbi(ucp_ep_h ep, const void *buffer, size_t length,
         }
     }
 
+    UCS_INSTRUMENT_RECORD(UCS_INSTRUMENT_TYPE_TX, "ucp_put_nbi_finish", status);
     return status;
 }
 
@@ -232,6 +237,7 @@ ucs_status_t ucp_get(ucp_ep_h ep, void *buffer, size_t length,
     uct_rkey_t uct_rkey;
     size_t frag_length;
 
+    UCS_INSTRUMENT_RECORD(UCS_INSTRUMENT_TYPE_RX, "ucp_get_start", length);
     UCP_RMA_CHECK_PARAMS(buffer, length);
 
     uct_rkey = UCP_RKEY_LOOKUP(ep, rkey);
@@ -274,6 +280,8 @@ retry:
     while (comp.count > 1) {
         ucp_worker_progress(ep->worker);
     }
+
+    UCS_INSTRUMENT_RECORD(UCS_INSTRUMENT_TYPE_RX, "ucp_get_finish", status);
     return UCS_OK;
 }
 
@@ -323,6 +331,7 @@ ucs_status_t ucp_get_nbi(ucp_ep_h ep, void *buffer, size_t length,
     ucs_status_t status;
     size_t frag_length;
 
+    UCS_INSTRUMENT_RECORD(UCS_INSTRUMENT_TYPE_RX, "ucp_get_nbi_start", length);
     uct_rkey_t uct_rkey = UCP_RKEY_LOOKUP(ep, rkey);
 
     UCP_RMA_CHECK_PARAMS(buffer, length);
@@ -366,6 +375,7 @@ ucs_status_t ucp_get_nbi(ucp_ep_h ep, void *buffer, size_t length,
         }
     }
 
+    UCS_INSTRUMENT_RECORD(UCS_INSTRUMENT_TYPE_RX, "ucp_get_nbi_finish", status);
     return status;
 }
 
