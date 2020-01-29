@@ -487,12 +487,12 @@ ucp_address_unpack_iface_attr(ucp_worker_t *worker,
         }
 
         /* Just take the rest of iface attrs from the local resource. */
-        wiface                    = ucp_worker_iface(worker, rsc_idx);
-        iface_attr->cap_flags     = wiface->attr.cap.flags;
-        iface_attr->event_flags   = wiface->attr.cap.event_flags;
-        iface_attr->priority      = wiface->attr.priority;
-        iface_attr->overhead      = wiface->attr.overhead;
-        iface_attr->bandwidth     = wiface->attr.bandwidth;
+        wiface                     = ucp_worker_iface(worker, rsc_idx);
+        iface_attr->cap_flags      = wiface->attr.cap.flags;
+        iface_attr->event_flags    = wiface->attr.cap.event_flags;
+        iface_attr->priority       = wiface->attr.priority;
+        iface_attr->overhead       = wiface->attr.overhead;
+        iface_attr->bandwidth      = wiface->attr.bandwidth;
         iface_attr->dst_rsc_index = rsc_idx;
         if (signbit(unified->lat_ovh)) {
             iface_attr->atomic.atomic32.op_flags  = wiface->attr.cap.atomic32.op_flags;
