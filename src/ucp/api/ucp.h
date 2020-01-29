@@ -125,7 +125,8 @@ enum ucp_params_field {
     UCP_PARAM_FIELD_MT_WORKERS_SHARED = UCS_BIT(5), /**< mt_workers_shared */
     UCP_PARAM_FIELD_ESTIMATED_NUM_EPS = UCS_BIT(6), /**< estimated_num_eps */
     UCP_PARAM_FIELD_ESTIMATED_NUM_PPN = UCS_BIT(7), /**< estimated_num_ppn */
-    UCP_PARAM_FIELD_NAME              = UCS_BIT(8)  /**< name */
+    UCP_PARAM_FIELD_NAME              = UCS_BIT(8), /**< name */
+    UCP_PARAM_FIELD_CONTEXT_HEADROOM  = UCS_BIT(9)  /**< context_headroom */
 };
 
 
@@ -164,7 +165,10 @@ enum ucp_feature {
      * @ref ucp_mem_map and packed by @ref ucp_memh_pack with the flag
      * @ref UCP_MEMH_PACK_FLAG_EXPORT and use it for local operations
      */
-    UCP_FEATURE_EXPORTED_MEMH = UCS_BIT(7)
+    UCP_FEATURE_EXPORTED_MEMH = UCS_BIT(7),
+
+   /**< Request collective operations support */
+    UCP_FEATURE_GROUPS        = UCS_BIT(8)
 };
 
 
@@ -1134,6 +1138,9 @@ typedef struct ucp_params {
      * unique name will be created for you.
      */
     const char                         *name;
+
+    /** Head-room before the allocated context pointer, for extensions */
+    size_t                             context_headroom;
 } ucp_params_t;
 
 

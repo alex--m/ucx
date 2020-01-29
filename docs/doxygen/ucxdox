@@ -763,6 +763,7 @@ WARN_LOGFILE           =
 # Note: If this tag is empty the current directory is searched.
 
 INPUT                  = $(SRCDIR)/src/ucp/api/             \
+                         $(SRCDIR)/src/ucg/api/             \
                          $(SRCDIR)/src/uct/api/             \
                          $(SRCDIR)/src/ucs/async/           \
                          $(SRCDIR)/src/ucs/config/          \
@@ -799,6 +800,8 @@ FILE_PATTERNS          = ucp.h              \
                          ucp_def.h          \
                          uct.h              \
                          uct_def.h          \
+                         ucg.h              \
+                         ucg_def.h          \
                          status.h           \
                          async_fwd.h        \
                          compiler_def.h     \

@@ -11,6 +11,7 @@
 #include <uct/sm/mm/base/mm_md.h>
 #include <uct/sm/mm/base/mm_iface.h>
 #include <ucs/debug/memtrack_int.h>
+#include <uct/sm/mm/coll/mm_coll_iface.h>
 #include <ucs/debug/log.h>
 #include <ucs/sys/sys.h>
 #include <ucs/profile/profile.h>
@@ -28,6 +29,7 @@ typedef struct uct_sysv_packed_rkey {
 typedef struct uct_sysv_md_config {
     uct_mm_md_config_t      super;
 } uct_sysv_md_config_t;
+
 
 static ucs_config_field_t uct_sysv_md_config_table[] = {
   {"MM_", "", NULL,
@@ -215,7 +217,15 @@ static uct_mm_md_mapper_ops_t uct_sysv_md_ops = {
 };
 
 UCT_MM_TL_DEFINE(sysv, &uct_sysv_md_ops, uct_sysv_rkey_unpack,
-                 uct_sysv_rkey_release, "SYSV_",
-                 uct_sysv_iface_config_table);
+                 uct_sysv_rkey_release, "SYSV",
+                 uct_sysv_iface_config_table, )
+UCT_MM_TL_DEFINE(sysv, &uct_sysv_md_ops, uct_sysv_rkey_unpack,
+                 uct_sysv_rkey_release, "SYSV_BCAST",
+                 uct_sysv_iface_config_table, _bcast)
+UCT_MM_TL_DEFINE(sysv, &uct_sysv_md_ops, uct_sysv_rkey_unpack,
+                 uct_sysv_rkey_release, "SYSV_INCAST",
+                 uct_sysv_iface_config_table, _incast)
 
 UCT_SINGLE_TL_INIT(&uct_sysv_component.super, sysv,,,)
+UCT_SINGLE_TL_INIT(&uct_sysv_bcast_component.super, sysv_bcast,,,)
+UCT_SINGLE_TL_INIT(&uct_sysv_incast_component.super, sysv_incast,,,)

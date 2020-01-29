@@ -12,6 +12,7 @@
 #include <uct/sm/mm/base/mm_md.h>
 #include <uct/sm/mm/base/mm_iface.h>
 #include <ucs/debug/memtrack_int.h>
+#include <uct/sm/mm/coll/mm_coll_iface.h>
 #include <ucs/debug/log.h>
 #include <ucs/sys/string.h>
 #include <ucs/profile/profile.h>
@@ -746,8 +747,15 @@ static uct_mm_md_mapper_ops_t uct_posix_md_ops = {
 };
 
 UCT_MM_TL_DEFINE(posix, &uct_posix_md_ops, uct_posix_rkey_unpack,
-                 uct_posix_rkey_release, "POSIX_",
-                 uct_posix_iface_config_table);
+                 uct_posix_rkey_release, "POSIX",
+                 uct_posix_iface_config_table, )
+UCT_MM_TL_DEFINE(posix, &uct_posix_md_ops, uct_posix_rkey_unpack,
+                 uct_posix_rkey_release, "POSIX_BCAST",
+                 uct_posix_iface_config_table, _bcast)
+UCT_MM_TL_DEFINE(posix, &uct_posix_md_ops, uct_posix_rkey_unpack,
+                 uct_posix_rkey_release, "POSIX_INCAST",
+                 uct_posix_iface_config_table, _incast)
 
 UCT_SINGLE_TL_INIT(&uct_posix_component.super, posix,,,)
-
+UCT_SINGLE_TL_INIT(&uct_posix_bcast_component.super, posix_bcast,,,)
+UCT_SINGLE_TL_INIT(&uct_posix_incast_component.super, posix_incast,,,)

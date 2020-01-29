@@ -30,6 +30,7 @@ AS_IF([test "x$with_mpi" = xyes],
         AC_PATH_PROGS(SHMEMCC,shmemcc,"",$mpi_path)
         AC_ARG_VAR(MPIRUN,[MPI launch command])
         AC_PATH_PROGS(MPIRUN,mpirun mpiexec aprun orterun,"",$mpi_path)
+        AC_SUBST([OMPI_COLL_UCX], ["$mpi_path/../lib/openmpi/mca_coll_ucx.la"])
         AS_IF([test -z "$MPIRUN"],
               AC_MSG_ERROR([--with-mpi was requested but MPI was not found in the PATH in $mpi_path]),[:])
         ],[:])
@@ -42,3 +43,4 @@ AM_CONDITIONAL([HAVE_MPI],    [test -n "$MPIRUN"])
 AM_CONDITIONAL([HAVE_MPICC],  [test -n "$MPICC"])
 AM_CONDITIONAL([HAVE_SHMEMCC],[test -n "$SHMEMCC"])
 AM_CONDITIONAL([HAVE_MPIRUN], [test -n "$MPIRUN"])
+AM_CONDITIONAL([HAVE_OMPI_UCG], [test -n "$OMPI_COLL_UCX"])

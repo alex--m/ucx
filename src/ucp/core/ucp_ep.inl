@@ -65,6 +65,16 @@ static inline ucp_lane_index_t ucp_ep_get_wireup_msg_lane(ucp_ep_h ep)
     return (lane == UCP_NULL_LANE) ? ucp_ep_get_am_lane(ep) : lane;
 }
 
+static inline ucp_lane_index_t ucp_ep_get_incast_lane(ucp_ep_h ep)
+{
+    return ucp_ep_config(ep)->key.incast_lane;
+}
+
+static inline ucp_lane_index_t ucp_ep_get_bcast_lane(ucp_ep_h ep)
+{
+    return ucp_ep_config(ep)->key.bcast_lane;
+}
+
 static inline ucp_lane_index_t ucp_ep_get_tag_lane(ucp_ep_h ep)
 {
     return ucp_ep_config(ep)->key.tag_lane;
@@ -92,6 +102,18 @@ static inline uct_ep_h ucp_ep_get_tag_uct_ep(ucp_ep_h ep)
     return ucp_ep_get_fast_lane(ep, ucp_ep_get_tag_lane(ep));
 }
 
+static inline uct_ep_h ucp_ep_get_incast_uct_ep(ucp_ep_h ep)
+{
+    ucs_assert(ucp_ep_get_incast_lane(ep) != UCP_NULL_LANE);
+    return ep->uct_eps[ucp_ep_get_incast_lane(ep)];
+}
+
+static inline uct_ep_h ucp_ep_get_bcast_uct_ep(ucp_ep_h ep)
+{
+    ucs_assert(ucp_ep_get_bcast_lane(ep) != UCP_NULL_LANE);
+    return ep->uct_eps[ucp_ep_get_bcast_lane(ep)];
+}
+
 static inline ucp_rsc_index_t ucp_ep_get_rsc_index(ucp_ep_h ep, ucp_lane_index_t lane)
 {
     ucs_assert(lane < UCP_MAX_LANES); /* to suppress coverity */
@@ -112,6 +134,11 @@ static inline uint8_t ucp_ep_get_path_index(ucp_ep_h ep, ucp_lane_index_t lane)
 static inline uct_iface_attr_t *ucp_ep_get_iface_attr(ucp_ep_h ep, ucp_lane_index_t lane)
 {
     return ucp_worker_iface_get_attr(ep->worker, ucp_ep_get_rsc_index(ep, lane));
+}
+
+static inline uct_iface_attr_t *ucp_ep_get_am_iface_attr(ucp_ep_h ep)
+{
+    return ucp_ep_get_iface_attr(ep, ucp_ep_get_am_lane(ep));
 }
 
 static inline size_t ucp_ep_get_max_bcopy(ucp_ep_h ep, ucp_lane_index_t lane)

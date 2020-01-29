@@ -162,6 +162,8 @@ void ucp_ep_config_key_reset(ucp_ep_config_key_t *key)
     key->wireup_msg_lane  = UCP_NULL_LANE;
     key->cm_lane          = UCP_NULL_LANE;
     key->keepalive_lane   = UCP_NULL_LANE;
+    key->incast_lane      = UCP_NULL_LANE;
+    key->bcast_lane       = UCP_NULL_LANE;
     key->rkey_ptr_lane    = UCP_NULL_LANE;
     key->tag_lane         = UCP_NULL_LANE;
     key->rma_bw_md_map    = 0;
@@ -1892,6 +1894,8 @@ int ucp_ep_config_is_equal(const ucp_ep_config_key_t *key1,
         (key1->wireup_msg_lane != key2->wireup_msg_lane) ||
         (key1->cm_lane != key2->cm_lane) ||
         (key1->keepalive_lane != key2->keepalive_lane) ||
+        (key1->incast_lane != key2->incast_lane) ||
+        (key1->bcast_lane != key2->bcast_lane) ||
         (key1->rkey_ptr_lane != key2->rkey_ptr_lane) ||
         (key1->err_mode != key2->err_mode) ||
         (key1->flags != key2->flags) ||
@@ -3113,6 +3117,14 @@ void ucp_ep_config_lane_info_str(ucp_worker_h worker,
 
     if (key->keepalive_lane == lane) {
         ucs_string_buffer_appendf(strbuf, " keepalive");
+    }
+
+    if (lane == key->incast_lane) {
+        ucs_string_buffer_appendf(strbuf, " incast");
+    }
+
+    if (lane == key->bcast_lane) {
+        ucs_string_buffer_appendf(strbuf, " bcast");
     }
 
     if (key->wireup_msg_lane == lane) {

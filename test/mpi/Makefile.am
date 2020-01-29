@@ -21,6 +21,20 @@ if HAVE_SHMEMCC
 noinst_PROGRAMS      += shmem_pingpong
 endif
 
+if HAVE_UCG
+if HAVE_OMPI_UCG
+noinst_PROGRAMS      += test_ucg
+
+# UCG Test
+test_ucg_SOURCES      = test_ucg.c
+test_ucg_LDADD        = $(abs_top_builddir)/src/uct/libuct.la \
+                        $(abs_top_builddir)/src/ucp/libucp.la \
+                        $(abs_top_builddir)/src/ucg/libucg.la \
+                        $(abs_top_builddir)/src/ucs/libucs.la \
+                        $(OMPI_COLL_UCX)
+endif
+endif
+
 AM_CPPFLAGS           = \
     $(BASE_CPPFLAGS) \
     -DUCS_LIB_DIR="$(abs_top_builddir)/src/ucs/.libs" \

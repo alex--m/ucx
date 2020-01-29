@@ -70,10 +70,9 @@ ucs_config_field_t uct_mm_iface_config_table[] = {
     {NULL}
 };
 
-static ucs_status_t uct_mm_iface_get_address(uct_iface_t *tl_iface,
-                                             uct_iface_addr_t *addr)
+ucs_status_t uct_mm_iface_get_address(uct_iface_t *tl_iface, uct_iface_addr_t *addr)
 {
-    uct_mm_iface_t      *iface      = ucs_derived_of(tl_iface, uct_mm_iface_t);
+    uct_mm_base_iface_t *iface      = ucs_derived_of(tl_iface, uct_mm_base_iface_t);
     uct_mm_md_t         *md         = ucs_derived_of(iface->super.super.md,
                                                      uct_mm_md_t);
     uct_mm_iface_addr_t *iface_addr = (void*)addr;
@@ -109,8 +108,8 @@ static int
 uct_mm_iface_is_reachable_v2(const uct_iface_h tl_iface,
                              const uct_iface_is_reachable_params_t *params)
 {
-    uct_mm_iface_t *iface = ucs_derived_of(tl_iface, uct_mm_iface_t);
-    uct_mm_md_t *md       = ucs_derived_of(iface->super.super.md, uct_mm_md_t);
+    uct_mm_base_iface_t *iface = ucs_derived_of(tl_iface, uct_mm_base_iface_t);
+    uct_mm_md_t         *md    = ucs_derived_of(iface->super.super.md, uct_mm_md_t);
     uct_mm_iface_addr_t *iface_addr;
 
     if (!uct_iface_is_reachable_params_addrs_valid(params)) {
@@ -145,15 +144,14 @@ ucs_status_t uct_mm_iface_flush(uct_iface_h tl_iface, unsigned flags,
     return UCS_OK;
 }
 
-static ucs_status_t uct_mm_iface_query(uct_iface_h tl_iface,
-                                       uct_iface_attr_t *iface_attr)
+ucs_status_t uct_mm_iface_query(uct_iface_h tl_iface, uct_iface_attr_t *iface_attr)
 {
     uct_mm_iface_t *iface = ucs_derived_of(tl_iface, uct_mm_iface_t);
-    uct_mm_md_t    *md    = ucs_derived_of(iface->super.super.md, uct_mm_md_t);
+    uct_mm_md_t    *md    = ucs_derived_of(iface->super.super.super.md, uct_mm_md_t);
     int attach_shm_file;
     ucs_status_t status;
 
-    uct_base_iface_query(&iface->super.super, iface_attr);
+    uct_base_iface_query(&iface->super.super.super, iface_attr);
 
     /* default values for all shared memory transports */
     iface_attr->cap.put.max_short       = UINT_MAX;
@@ -171,9 +169,9 @@ static ucs_status_t uct_mm_iface_query(uct_iface_h tl_iface,
     iface_attr->cap.get.align_mtu       = iface_attr->cap.get.opt_zcopy_align;
     iface_attr->cap.get.max_iov         = 1;
 
-    iface_attr->cap.am.max_short        = iface->config.fifo_elem_size -
+    iface_attr->cap.am.max_short        = iface->super.config.fifo_elem_size -
                                           sizeof(uct_mm_fifo_element_t);
-    iface_attr->cap.am.max_bcopy        = iface->config.seg_size;
+    iface_attr->cap.am.max_bcopy        = iface->super.config.seg_size;
     iface_attr->cap.am.min_zcopy        = 0;
     iface_attr->cap.am.max_zcopy        = 0;
     iface_attr->cap.am.opt_zcopy_align  = UCS_SYS_CACHE_LINE_SIZE;
@@ -194,7 +192,7 @@ static ucs_status_t uct_mm_iface_query(uct_iface_h tl_iface,
                                           UCT_IFACE_FLAG_PENDING             |
                                           UCT_IFACE_FLAG_CB_SYNC             |
                                           UCT_IFACE_FLAG_CONNECT_TO_IFACE    |
-                                          iface->config.extra_cap_flags;
+                                          iface->super.config.extra_cap_flags;
 
     status = uct_mm_md_mapper_ops(md)->query(&attach_shm_file);
     ucs_assert_always(status == UCS_OK);
@@ -229,7 +227,7 @@ static ucs_status_t uct_mm_iface_query(uct_iface_h tl_iface,
                                           UCS_BIT(UCT_ATOMIC_OP_CSWAP);
 
     iface_attr->latency                 = UCT_MM_IFACE_LATENCY;
-    iface_attr->bandwidth.dedicated     = iface->super.config.bandwidth;
+    iface_attr->bandwidth.dedicated     = iface->super.super.config.bandwidth;
     iface_attr->bandwidth.shared        = 0;
     iface_attr->overhead                = UCT_MM_IFACE_OVERHEAD;
     iface_attr->priority                = 0;
@@ -237,23 +235,8 @@ static ucs_status_t uct_mm_iface_query(uct_iface_h tl_iface,
     return UCS_OK;
 }
 
-static UCS_F_ALWAYS_INLINE void
-uct_mm_progress_fifo_tail(uct_mm_iface_t *iface)
-{
-    /* don't progress the tail every time - release in batches. improves performance */
-    if (iface->read_index & iface->fifo_release_factor_mask) {
-        return;
-    }
-
-    /* memory barrier - make sure that the memory is flushed before update the
-     * FIFO tail */
-    ucs_memory_cpu_store_fence();
-
-    iface->recv_fifo_ctl->tail = iface->read_index;
-}
-
-static UCS_F_ALWAYS_INLINE ucs_status_t
-uct_mm_assign_desc_to_fifo_elem(uct_mm_iface_t *iface,
+UCS_F_ALWAYS_INLINE ucs_status_t
+uct_mm_assign_desc_to_fifo_elem(uct_mm_base_iface_t *iface,
                                 uct_mm_fifo_element_t *elem,
                                 unsigned need_new_desc)
 {
@@ -271,9 +254,10 @@ uct_mm_assign_desc_to_fifo_elem(uct_mm_iface_t *iface,
     return UCS_OK;
 }
 
-static UCS_F_ALWAYS_INLINE void uct_mm_iface_process_recv(uct_mm_iface_t *iface)
+static UCS_F_ALWAYS_INLINE void
+uct_mm_iface_process_recv(uct_mm_base_iface_t *iface,
+                          uct_mm_fifo_element_t* elem)
 {
-    uct_mm_fifo_element_t *elem = iface->read_index_elem;
     ucs_status_t status;
     void *data;
 
@@ -281,7 +265,7 @@ static UCS_F_ALWAYS_INLINE void uct_mm_iface_process_recv(uct_mm_iface_t *iface)
         /* read short (inline) messages from the FIFO elements */
         uct_mm_iface_trace_am(iface, UCT_AM_TRACE_TYPE_RECV, elem->flags,
                               elem->am_id, elem + 1, elem->length,
-                              iface->read_index);
+                              iface->recv_check.read_index);
         uct_mm_iface_invoke_am(iface, elem->am_id, elem + 1, elem->length, 0);
         return;
     }
@@ -296,7 +280,7 @@ static UCS_F_ALWAYS_INLINE void uct_mm_iface_process_recv(uct_mm_iface_t *iface)
     data = elem->desc_data;
     VALGRIND_MAKE_MEM_DEFINED(data, elem->length);
     uct_mm_iface_trace_am(iface, UCT_AM_TRACE_TYPE_RECV, elem->flags,
-                          elem->am_id, data, elem->length, iface->read_index);
+                          elem->am_id, data, elem->length, iface->recv_check.read_index);
 
     status = uct_mm_iface_invoke_am(iface, elem->am_id, data, elem->length,
                                     UCT_CB_PARAM_FLAG_DESC);
@@ -309,73 +293,37 @@ static UCS_F_ALWAYS_INLINE void uct_mm_iface_process_recv(uct_mm_iface_t *iface)
     }
 }
 
-static UCS_F_ALWAYS_INLINE int
-uct_mm_iface_fifo_has_new_data(uct_mm_iface_t *iface)
-{
-    /* check the read_index to see if there is a new item to read
-     * (checking the owner bit) */
-    return (((iface->read_index >> iface->fifo_shift) & 1) ==
-            (iface->read_index_elem->flags & 1));
-}
-
 static UCS_F_ALWAYS_INLINE unsigned
-uct_mm_iface_poll_fifo(uct_mm_iface_t *iface)
+uct_mm_iface_poll_fifo(uct_mm_base_iface_t *iface)
 {
-    if (!uct_mm_iface_fifo_has_new_data(iface)) {
+    if (!uct_mm_iface_fifo_has_new_data(&iface->recv_check)) {
         return 0;
     }
 
     /* read from read_index_elem */
     ucs_memory_cpu_load_fence();
-    ucs_assert(iface->read_index <=
-               (iface->recv_fifo_ctl->head & ~UCT_MM_IFACE_FIFO_HEAD_EVENT_ARMED));
+    uct_mm_fifo_element_t* elem = iface->recv_check.read_elem;
+    ucs_assert(iface->recv_check.read_index <=
+               (iface->recv_check.fifo_ctl->head & ~UCT_MM_IFACE_FIFO_HEAD_EVENT_ARMED));
 
-    uct_mm_iface_process_recv(iface);
+    uct_mm_iface_process_recv(iface, elem);
 
     /* raise the read_index */
-    iface->read_index++;
+    uint64_t read_index = ++iface->recv_check.read_index;
 
     /* the next fifo_element which the read_index points to */
-    iface->read_index_elem =
+    iface->recv_check.read_elem =
         UCT_MM_IFACE_GET_FIFO_ELEM(iface, iface->recv_fifo_elems,
-                                   (iface->read_index & iface->fifo_mask));
+                                   (read_index & iface->fifo_mask));
 
-    uct_mm_progress_fifo_tail(iface);
+    uct_mm_progress_fifo_tail(&iface->recv_check);
 
     return 1;
 }
 
-static UCS_F_ALWAYS_INLINE void
-uct_mm_iface_fifo_window_adjust(uct_mm_iface_t *iface,
-                                unsigned fifo_poll_count)
+unsigned uct_mm_iface_progress(uct_iface_h tl_iface)
 {
-    if (fifo_poll_count < iface->fifo_poll_count) {
-        iface->fifo_poll_count = ucs_max(iface->fifo_poll_count /
-                                         UCT_MM_IFACE_FIFO_MD_FACTOR,
-                                         UCT_MM_IFACE_FIFO_MIN_POLL);
-        iface->fifo_prev_wnd_cons = 0;
-        return;
-    }
-
-    ucs_assert(fifo_poll_count == iface->fifo_poll_count);
-
-    if (iface->fifo_prev_wnd_cons) {
-        /* Increase FIFO window size if it was fully consumed
-         * during the previous iface progress call in order
-         * to prevent the situation when the window will be
-         * adjusted to [MIN, MIN + 1, MIN, MIN + 1, ...] that
-         * is harmful to latency */
-        iface->fifo_poll_count = ucs_min(iface->fifo_poll_count +
-                                         UCT_MM_IFACE_FIFO_AI_VALUE,
-                                         iface->config.fifo_max_poll);
-    } else {
-        iface->fifo_prev_wnd_cons = 1;
-    }
-}
-
-static unsigned uct_mm_iface_progress(uct_iface_h tl_iface)
-{
-    uct_mm_iface_t *iface = ucs_derived_of(tl_iface, uct_mm_iface_t);
+    uct_mm_base_iface_t *iface = ucs_derived_of(tl_iface, uct_mm_base_iface_t);
     unsigned total_count  = 0;
     unsigned count;
 
@@ -398,17 +346,15 @@ static unsigned uct_mm_iface_progress(uct_iface_h tl_iface)
     return total_count;
 }
 
-static ucs_status_t uct_mm_iface_event_fd_get(uct_iface_h tl_iface, int *fd_p)
+ucs_status_t uct_mm_iface_event_fd_get(uct_iface_h tl_iface, int *fd_p)
 {
-    *fd_p = ucs_derived_of(tl_iface, uct_mm_iface_t)->signal_fd;
+    *fd_p = ucs_derived_of(tl_iface, uct_mm_base_iface_t)->signal_fd;
     return UCS_OK;
 }
 
-
-static ucs_status_t
-uct_mm_iface_event_fd_arm(uct_iface_h tl_iface, unsigned events)
+ucs_status_t uct_mm_iface_event_fd_arm(uct_iface_h tl_iface, unsigned events)
 {
-    uct_mm_iface_t *iface = ucs_derived_of(tl_iface, uct_mm_iface_t);
+    uct_mm_base_iface_t *iface = ucs_derived_of(tl_iface, uct_mm_base_iface_t);
     char dummy[UCT_MM_IFACE_MAX_SIG_EVENTS]; /* pop multiple signals at once */
     uint64_t head, prev_head;
     int ret;
@@ -425,12 +371,12 @@ uct_mm_iface_event_fd_arm(uct_iface_h tl_iface, unsigned events)
     }
 
     /* Make the next sender which writes to the FIFO signal the receiver */
-    head = iface->recv_fifo_ctl->head;
-    if ((head & ~UCT_MM_IFACE_FIFO_HEAD_EVENT_ARMED) > iface->read_index) {
+    head      = iface->recv_check.fifo_ctl->head;
+    if ((head & ~UCT_MM_IFACE_FIFO_HEAD_EVENT_ARMED) > iface->recv_check.read_index) {
         /* head element was not read yet */
         ucs_trace("iface %p: cannot arm, head %" PRIu64 " read_index %" PRIu64,
                   iface, head & ~UCT_MM_IFACE_FIFO_HEAD_EVENT_ARMED,
-                  iface->read_index);
+                  iface->recv_check.read_index);
         return UCS_ERR_BUSY;
     }
 
@@ -438,7 +384,7 @@ uct_mm_iface_event_fd_arm(uct_iface_h tl_iface, unsigned events)
         /* Try to mark the head index as armed in an atomic way; fail if any
            sender managed to update the head at the same time */
         prev_head = ucs_atomic_cswap64(
-                ucs_unaligned_ptr(&iface->recv_fifo_ctl->head), head,
+                ucs_unaligned_ptr(&iface->recv_check.fifo_ctl->head), head,
                 head | UCT_MM_IFACE_FIFO_HEAD_EVENT_ARMED);
         if (prev_head != head) {
             /* race with sender; need to retry */
@@ -459,7 +405,7 @@ uct_mm_iface_event_fd_arm(uct_iface_h tl_iface, unsigned events)
         if (errno == EAGAIN) {
             ucs_trace("iface %p: armed head %" PRIu64 " read_index %" PRIu64,
                       iface, head & ~UCT_MM_IFACE_FIFO_HEAD_EVENT_ARMED,
-                      iface->read_index);
+                      iface->recv_check.read_index);
             return UCS_OK;
         } else if (errno == EINTR) {
             return UCS_ERR_BUSY;
@@ -521,7 +467,7 @@ uct_mm_estimate_perf(uct_iface_h tl_iface, uct_perf_attr_t *perf_attr)
 
     if (perf_attr->field_mask & UCT_PERF_ATTR_FIELD_BANDWIDTH) {
         perf_attr->bandwidth.shared = 0;
-        perf_attr->bandwidth.dedicated = iface->super.config.bandwidth;
+        perf_attr->bandwidth.dedicated = iface->super.super.config.bandwidth;
     }
 
     switch (ucs_arch_get_cpu_vendor()) {
@@ -591,9 +537,9 @@ static uct_iface_internal_ops_t uct_mm_iface_internal_ops = {
 static void uct_mm_iface_recv_desc_init(uct_iface_h tl_iface, void *obj,
                                         uct_mem_h memh)
 {
-    uct_mm_iface_t     *iface = ucs_derived_of(tl_iface, uct_mm_iface_t);
-    uct_mm_recv_desc_t *desc  = obj;
-    uct_mm_seg_t        *seg  = memh;
+    uct_mm_base_iface_t *iface = ucs_derived_of(tl_iface, uct_mm_base_iface_t);
+    uct_mm_recv_desc_t  *desc  = obj;
+    uct_mm_seg_t        *seg   = memh;
     size_t offset;
 
     if (seg->length > UINT_MAX) {
@@ -612,7 +558,7 @@ static void uct_mm_iface_recv_desc_init(uct_iface_h tl_iface, void *obj,
     desc->info.offset   = offset;
 }
 
-static void uct_mm_iface_free_rx_descs(uct_mm_iface_t *iface, unsigned num_elems)
+static void uct_mm_iface_free_rx_descs(uct_mm_base_iface_t *iface, unsigned num_elems)
 {
     uct_mm_fifo_element_t *elem;
     uct_mm_recv_desc_t *desc;
@@ -650,7 +596,7 @@ void uct_mm_iface_set_fifo_ptrs(void *fifo_mem, uct_mm_fifo_ctl_t **fifo_ctl_p,
     *fifo_elems_p = UCS_PTR_BYTE_OFFSET(fifo_ctl, UCT_MM_FIFO_CTL_SIZE);
 }
 
-static ucs_status_t uct_mm_iface_create_signal_fd(uct_mm_iface_t *iface)
+static ucs_status_t uct_mm_iface_create_signal_fd(uct_mm_base_iface_t *iface)
 {
     ucs_status_t status;
     socklen_t addrlen;
@@ -685,9 +631,9 @@ static ucs_status_t uct_mm_iface_create_signal_fd(uct_mm_iface_t *iface)
      * to enlarge the interface address size.
      */
     addrlen = sizeof(struct sockaddr_un);
-    memset(&iface->recv_fifo_ctl->signal_sockaddr, 0, addrlen);
+    memset(&iface->recv_check.fifo_ctl->signal_sockaddr, 0, addrlen);
     ret = getsockname(iface->signal_fd,
-                      (struct sockaddr *)ucs_unaligned_ptr(&iface->recv_fifo_ctl->signal_sockaddr),
+                      (struct sockaddr *)ucs_unaligned_ptr(&iface->recv_check.fifo_ctl->signal_sockaddr),
                       &addrlen);
     if (ret < 0) {
         ucs_error("Failed to retrieve unix domain socket address: %m");
@@ -695,7 +641,7 @@ static ucs_status_t uct_mm_iface_create_signal_fd(uct_mm_iface_t *iface)
         goto err_close;
     }
 
-    iface->recv_fifo_ctl->signal_addrlen = addrlen;
+    iface->recv_check.fifo_ctl->signal_addrlen = addrlen;
     return UCS_OK;
 
 err_close:
@@ -704,7 +650,7 @@ err:
     return status;
 }
 
-static void uct_mm_iface_log_created(uct_mm_iface_t *iface)
+static void uct_mm_iface_log_created(uct_mm_base_iface_t *iface)
 {
     uct_mm_seg_t *seg = iface->recv_fifo_mem.memh;
 
@@ -714,9 +660,9 @@ static void uct_mm_iface_log_created(uct_mm_iface_t *iface)
               iface->config.fifo_elem_size, iface->config.fifo_size);
 }
 
-static UCS_CLASS_INIT_FUNC(uct_mm_iface_t, uct_md_h md, uct_worker_h worker,
-                           const uct_iface_params_t *params,
-                           const uct_iface_config_t *tl_config)
+UCS_CLASS_INIT_FUNC(uct_mm_base_iface_t, uct_iface_ops_t *ops, uct_md_h md,
+                    uct_worker_h worker, const uct_iface_params_t *params,
+                    const uct_iface_config_t *tl_config)
 {
     uct_mm_iface_config_t *mm_config =
                     ucs_derived_of(tl_config, uct_mm_iface_config_t);
@@ -725,9 +671,8 @@ static UCS_CLASS_INIT_FUNC(uct_mm_iface_t, uct_md_h md, uct_worker_h worker,
     ucs_status_t status;
     unsigned i;
 
-    UCS_CLASS_CALL_SUPER_INIT(uct_sm_iface_t, &uct_mm_iface_ops,
-                              &uct_mm_iface_internal_ops, md, worker, params,
-                              tl_config);
+    UCS_CLASS_CALL_SUPER_INIT(uct_sm_iface_t, ops, &uct_mm_iface_internal_ops,
+                              md, worker, params, tl_config);
 
     if (ucs_derived_of(worker, uct_priv_worker_t)->thread_mode == UCS_THREAD_MODE_MULTI) {
         ucs_error("Shared memory transport does not support multi-threaded worker");
@@ -760,7 +705,8 @@ static UCS_CLASS_INIT_FUNC(uct_mm_iface_t, uct_md_h md, uct_worker_h worker,
     self->config.fifo_size         = mm_config->fifo_size;
     self->config.fifo_elem_size    = mm_config->fifo_elem_size;
     self->config.seg_size          = mm_config->seg_size;
-    self->config.fifo_max_poll     = ((mm_config->fifo_max_poll == UCS_ULUNITS_AUTO) ?
+    self->config.fifo_max_poll     = ((mm_config->fifo_max_poll ==
+                                       UCS_ULUNITS_AUTO) ?
                                       UCT_MM_IFACE_FIFO_MAX_POLL :
                                       /* trim by the maximum unsigned integer value */
                                       ucs_min(mm_config->fifo_max_poll, UINT_MAX));
@@ -771,11 +717,8 @@ static UCS_CLASS_INIT_FUNC(uct_mm_iface_t, uct_md_h md, uct_worker_h worker,
     self->fifo_prev_wnd_cons       = 0;
     self->fifo_poll_count          = self->config.fifo_max_poll;
     /* cppcheck-suppress internalAstError */
-    self->fifo_release_factor_mask = UCS_MASK(ucs_ilog2(ucs_max((int)
-                                     (mm_config->fifo_size * mm_config->release_fifo_factor),
-                                     1)));
+
     self->fifo_mask                = self->config.fifo_size - 1;
-    self->fifo_shift               = ucs_count_trailing_zero_bits(mm_config->fifo_size);
     self->rx_headroom              = (params->field_mask &
                                       UCT_IFACE_PARAM_FIELD_RX_HEADROOM) ?
                                      params->rx_headroom : 0;
@@ -792,15 +735,21 @@ static UCS_CLASS_INIT_FUNC(uct_mm_iface_t, uct_md_h md, uct_worker_h worker,
     }
 
     uct_mm_iface_set_fifo_ptrs(self->recv_fifo_mem.address,
-                               &self->recv_fifo_ctl, &self->recv_fifo_elems);
-    self->recv_fifo_ctl->head = 0;
-    self->recv_fifo_ctl->tail = 0;
-    self->recv_fifo_ctl->pid  = getpid();
-    self->read_index          = 0;
-    self->read_index_elem     = UCT_MM_IFACE_GET_FIFO_ELEM(self,
-                                                           self->recv_fifo_elems,
-                                                           self->read_index);
-    payload_offset            = sizeof(uct_mm_recv_desc_t) + self->rx_headroom;
+                               &self->recv_check.fifo_ctl, &self->recv_fifo_elems);
+
+    payload_offset                       = sizeof(uct_mm_recv_desc_t) +
+                                           self->rx_headroom;
+    self->recv_check.fifo_ctl->head      = 0;
+    self->recv_check.fifo_ctl->tail      = 0;
+    self->recv_check.fifo_ctl->pid       = getpid();
+    self->recv_check.is_flags_cached     = 0;
+    self->recv_check.read_index          = 0;
+    self->recv_check.read_elem           = self->recv_fifo_elems;
+    self->recv_check.fifo_shift          =
+            ucs_count_trailing_zero_bits(mm_config->fifo_size);
+
+    self->recv_check.fifo_release_factor_mask = UCS_MASK(ucs_ilog2(ucs_max((int)
+            (mm_config->fifo_size * mm_config->release_fifo_factor), 1)));
 
     /* create a unix file descriptor to receive event notifications */
     status = uct_mm_iface_create_signal_fd(self);
@@ -866,7 +815,7 @@ err:
     return status;
 }
 
-static UCS_CLASS_CLEANUP_FUNC(uct_mm_iface_t)
+static UCS_CLASS_CLEANUP_FUNC(uct_mm_base_iface_t)
 {
     uct_base_iface_progress_disable(&self->super.super.super,
                                     UCT_PROGRESS_SEND | UCT_PROGRESS_RECV);
@@ -882,7 +831,18 @@ static UCS_CLASS_CLEANUP_FUNC(uct_mm_iface_t)
     ucs_arbiter_cleanup(&self->arbiter);
 }
 
-UCS_CLASS_DEFINE(uct_mm_iface_t, uct_base_iface_t);
+UCS_CLASS_INIT_FUNC(uct_mm_iface_t, uct_md_h md, uct_worker_h worker,
+                    const uct_iface_params_t *params,
+                    const uct_iface_config_t *tl_config)
+{
+    UCS_CLASS_CALL_SUPER_INIT(uct_mm_base_iface_t, &uct_mm_iface_ops, md,
+                              worker, params, tl_config);
+    return UCS_OK;
+}
+static UCS_CLASS_CLEANUP_FUNC(uct_mm_iface_t) {}
+
+UCS_CLASS_DEFINE(uct_mm_base_iface_t, uct_base_iface_t);
+UCS_CLASS_DEFINE(uct_mm_iface_t, uct_mm_base_iface_t);
 
 UCS_CLASS_DEFINE_NEW_FUNC(uct_mm_iface_t, uct_iface_t, uct_md_h, uct_worker_h,
                           const uct_iface_params_t*, const uct_iface_config_t*);

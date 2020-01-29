@@ -76,7 +76,7 @@ typedef enum ucp_transports_list_search_result {
 /* Declare all am handlers */
 UCP_AM_HANDLER_FOREACH(UCP_AM_HANDLER_DECL)
 
-ucp_am_handler_t *ucp_am_handlers[UCP_AM_ID_LAST] = {
+ucp_am_handler_t *ucp_am_handlers[UCP_AM_ID_MAX] = {
     UCP_AM_HANDLER_FOREACH(UCP_AM_HANDLER_ENTRY)
 };
 
@@ -479,7 +479,7 @@ static ucs_config_field_t ucp_context_config_table[] = {
   {NULL}
 };
 
-static ucs_config_field_t ucp_config_table[] = {
+ucs_config_field_t ucp_config_table[] = {
   {"NET_DEVICES", UCP_RSC_CONFIG_ALL,
    "Specifies which network device(s) to use. The order is not meaningful.\n"
    "\"all\" would use all available devices.",
@@ -601,6 +601,9 @@ static ucp_tl_alias_t ucp_tl_aliases[] = {
   { "ugni",  { "ugni_smsg", UCP_TL_AUX("ugni_udt"), "ugni_rdma", NULL } },
   { "cuda",  { "cuda_copy", "cuda_ipc", "gdr_copy", NULL } },
   { "rocm",  { "rocm_copy", "rocm_ipc", "rocm_gdr", NULL } },
+  { "sysv",  { "sysv_",  "sysv_bcast_",  "sysv_incast_", NULL } },
+  { "posix", { "posix_", "posix_bcast_", "posix_incast_", NULL } },
+  { "xpmem", { "xpmem_", "xpmem_bcast_", "xpmem_incast_", NULL } },
   { NULL }
 };
 
@@ -613,6 +616,7 @@ const char *ucp_feature_str[] = {
     [ucs_ilog2(UCP_FEATURE_WAKEUP)] = "UCP_FEATURE_WAKEUP",
     [ucs_ilog2(UCP_FEATURE_STREAM)] = "UCP_FEATURE_STREAM",
     [ucs_ilog2(UCP_FEATURE_AM)]     = "UCP_FEATURE_AM",
+    [ucs_ilog2(UCP_FEATURE_GROUPS)] = "UCP_FEATURE_GROUPS",
     NULL
 };
 
@@ -918,7 +922,7 @@ ucp_transports_list_search(const char *tl_name,
 {
     uint8_t search_result = 0;
     uint64_t tmp_tl_cfg_mask;
-    ucp_tl_alias_t *alias;
+    ucp_tl_alias_t *alias, *rec_alias;
 
     if (ucp_config_is_tl_name_present(tl_array, tl_name, 0, NULL,
                                       tl_cfg_mask)) {
@@ -932,10 +936,15 @@ ucp_transports_list_search(const char *tl_name,
         search_result |= UCP_TRANSPORTS_LIST_SEARCH_RESULT_AUX_IN_MAIN;
     }
 
+    for (rec_alias = ucp_tl_aliases; rec_alias->alias != NULL; ++rec_alias) {
     for (alias = ucp_tl_aliases; alias->alias != NULL; ++alias) {
         tmp_tl_cfg_mask = 0;
-        if (ucp_config_is_tl_name_present(tl_array, alias->alias, 1, NULL,
-                                          &tmp_tl_cfg_mask)) {
+        if ((ucp_config_is_tl_name_present(tl_array, alias->alias, 1, NULL,
+                                           &tmp_tl_cfg_mask)) ||
+            ((ucp_config_is_tl_name_present(tl_array, rec_alias->alias, 1, NULL,
+                                            &tmp_tl_cfg_mask)) &&
+             (ucp_tls_alias_is_present(rec_alias, alias->alias, NULL))))
+            {
             if (ucp_tls_alias_is_present(alias, tl_name, NULL)) {
                 /* alias={tl_name}, UCX_TLS=[^]alias */
                 *tl_cfg_mask  |= tmp_tl_cfg_mask;
@@ -959,6 +968,7 @@ ucp_transports_list_search(const char *tl_name,
                 search_result |= UCP_TRANSPORTS_LIST_SEARCH_RESULT_AUX_IN_MAIN;
             }
         }
+    }
     }
 
     return search_result;
@@ -2161,6 +2171,7 @@ ucs_status_t ucp_init_version(unsigned api_major_version, unsigned api_minor_ver
     ucp_config_t *dfl_config = NULL;
     ucp_context_t *context;
     ucs_status_t status;
+    size_t context_size, headroom_size;
 
     ucp_version_check(api_major_version, api_minor_version);
 
@@ -2172,14 +2183,25 @@ ucs_status_t ucp_init_version(unsigned api_major_version, unsigned api_minor_ver
         config = dfl_config;
     }
 
+    context_size = sizeof(*context);
+    if ((params->field_mask & UCP_PARAM_FIELD_CONTEXT_HEADROOM) != 0) {
+        headroom_size = params->context_headroom;
+    } else {
+        headroom_size = 0;
+    }
+
     /* allocate a ucp context */
-    context = ucs_calloc(1, sizeof(*context), "ucp context");
+    context = ucs_calloc(1, context_size + headroom_size, "ucp context");
     if (context == NULL) {
         status = UCS_ERR_NO_MEMORY;
         goto err_release_dfl_config;
     }
 
     ucs_list_head_init(&context->cached_key_list);
+
+    /* Move the context pointer forward (leave the head-room uninitialized) */
+    context           = UCS_PTR_BYTE_OFFSET(context, headroom_size);
+    context->headroom = headroom_size;
 
     status = ucp_fill_config(context, params, config);
     if (status != UCS_OK) {
@@ -2236,6 +2258,9 @@ err_thread_lock_finalize:
     UCP_THREAD_LOCK_FINALIZE(&context->mt_lock);
     ucp_free_config(context);
 err_free_ctx:
+    if (params->field_mask & UCP_PARAM_FIELD_CONTEXT_HEADROOM) {
+        context = UCS_PTR_BYTE_OFFSET(context, -params->context_headroom);
+    }
     ucs_free(context);
 err_release_dfl_config:
     if (dfl_config != NULL) {
@@ -2252,6 +2277,8 @@ void ucp_cleanup(ucp_context_h context)
     ucp_free_resources(context);
     ucp_free_config(context);
     UCP_THREAD_LOCK_FINALIZE(&context->mt_lock);
+
+    context = UCS_PTR_BYTE_OFFSET(context, -context->headroom);
     ucs_free(context);
 }
 

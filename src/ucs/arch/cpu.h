@@ -194,6 +194,10 @@ static inline int ucs_cpu_prefer_relaxed_order()
              (cpu_model == UCS_CPU_MODEL_AMD_GENOA)));
 }
 
+static inline int ucs_cpu_cache_line_is_equal(const void *a, const void *b)
+{
+    return ucs_arch_cache_line_is_equal(a, b);
+}
 
 #define UCS_CPU_EST_BCOPY_BW_AMD         (5008 * UCS_MBYTE)
 #define UCS_CPU_EST_BCOPY_BW_FUJITSU_ARM (12000 * UCS_MBYTE)

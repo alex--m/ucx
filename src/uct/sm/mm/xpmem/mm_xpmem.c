@@ -13,6 +13,7 @@
 
 #include <uct/sm/mm/base/mm_md.h>
 #include <uct/sm/mm/base/mm_iface.h>
+#include <uct/sm/mm/coll/mm_coll_iface.h>
 #include <ucs/datastruct/khash.h>
 #include <ucs/debug/memtrack_int.h>
 #include <ucs/type/init_once.h>
@@ -552,7 +553,11 @@ static uct_mm_md_mapper_ops_t uct_xpmem_md_ops = {
 
 static void uct_xpmem_global_init()
 {
-    ucs_recursive_spinlock_init(&uct_xpmem_remote_mem_lock, 0);
+    static ucs_init_once_t xpmem_ctor = UCS_INIT_ONCE_INITIALIZER;
+
+    UCS_INIT_ONCE(&xpmem_ctor) {
+        ucs_recursive_spinlock_init(&uct_xpmem_remote_mem_lock, 0);
+    }
 }
 
 static void uct_xpmem_global_cleanup()
@@ -560,26 +565,40 @@ static void uct_xpmem_global_cleanup()
     unsigned long num_leaked_segments;
     uct_xpmem_remote_mem_t *rmem;
 
-    num_leaked_segments = 0;
-    kh_foreach_value(&uct_xpmem_remote_mem_hash, rmem, {
-        ucs_debug("remote segment id %lx apid %lx is not released, refcount %d",
-                  (unsigned long)rmem->xsegid, (unsigned long)rmem->apid,
-                  rmem->refcount);
-        ++num_leaked_segments;
-    })
-    kh_destroy_inplace(xpmem_remote_mem, &uct_xpmem_remote_mem_hash);
+    static ucs_init_once_t xpmem_dtor = UCS_INIT_ONCE_INITIALIZER;
 
-    if (num_leaked_segments > 0) {
-        ucs_diag("%lu xpmem remote segments were not released at exit",
-                 num_leaked_segments);
+    UCS_INIT_ONCE(&xpmem_dtor) {
+        num_leaked_segments = 0;
+        kh_foreach_value(&uct_xpmem_remote_mem_hash, rmem, {
+            ucs_debug("remote segment id %lx apid %lx is not released, refcount %d",
+                      (unsigned long)rmem->xsegid, (unsigned long)rmem->apid,
+                      rmem->refcount);
+            ++num_leaked_segments;
+        })
+        kh_destroy_inplace(xpmem_remote_mem, &uct_xpmem_remote_mem_hash);
+
+        if (num_leaked_segments > 0) {
+            ucs_diag("%lu xpmem remote segments were not released at exit",
+                     num_leaked_segments);
+        }
+
+        ucs_recursive_spinlock_destroy(&uct_xpmem_remote_mem_lock);
     }
-
-    ucs_recursive_spinlock_destroy(&uct_xpmem_remote_mem_lock);
 }
 
 UCT_MM_TL_DEFINE(xpmem, &uct_xpmem_md_ops, uct_xpmem_rkey_unpack,
-                 uct_xpmem_rkey_release, "XPMEM_",
-                 uct_xpmem_iface_config_table);
+                 uct_xpmem_rkey_release, "XPMEM",
+                 uct_xpmem_iface_config_table, );
+UCT_MM_TL_DEFINE(xpmem, &uct_xpmem_md_ops, uct_xpmem_rkey_unpack,
+                 uct_xpmem_rkey_release, "XPMEM_BCAST",
+                 uct_xpmem_iface_config_table, _bcast);
+UCT_MM_TL_DEFINE(xpmem, &uct_xpmem_md_ops, uct_xpmem_rkey_unpack,
+                 uct_xpmem_rkey_release, "XPMEM_INCAST",
+                 uct_xpmem_iface_config_table, _incast);
 
 UCT_SINGLE_TL_INIT(&uct_xpmem_component.super, xpmem, ctor,
+                   uct_xpmem_global_init(), uct_xpmem_global_cleanup())
+UCT_SINGLE_TL_INIT(&uct_xpmem_bcast_component.super, xpmem_incast, ctor,
+                   uct_xpmem_global_init(), uct_xpmem_global_cleanup())
+UCT_SINGLE_TL_INIT(&uct_xpmem_incast_component.super, xpmem_bcast, ctor,
                    uct_xpmem_global_init(), uct_xpmem_global_cleanup())

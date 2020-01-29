@@ -189,7 +189,8 @@ AS_IF([test "x$with_ib" = "xyes"],
        AS_IF([test "x$with_mlx5_dv" = "xyes"],
              [AC_DEFINE([HAVE_MLX5_DV], 1, [mlx5 DV support])
               AS_IF([test "x$has_get_av" = "xyes"],
-                 [AC_DEFINE([HAVE_MLX5_HW_UD], 1, [mlx5 UD bare-metal support])])])
+                 [AC_DEFINE([HAVE_MLX5_HW_UD], 1, [mlx5 UD bare-metal support])])
+             ])
 
        AS_IF([test x$with_devx = xyes -a x$have_devx != xyes], [
                AC_MSG_ERROR([devx requested but not found])])

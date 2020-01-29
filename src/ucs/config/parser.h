@@ -11,6 +11,7 @@
 
 #include <ucs/datastruct/list.h>
 #include <ucs/datastruct/string_buffer.h>
+#include <ucs/sys/compiler_def.h>
 #include <ucs/type/status.h>
 #include <ucs/sys/stubs.h>
 

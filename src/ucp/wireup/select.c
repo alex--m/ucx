@@ -133,7 +133,9 @@ static const char *ucp_wireup_iface_flags[] = {
     [ucs_ilog2(UCT_IFACE_FLAG_TAG_EAGER_ZCOPY)]  = "tag eager zcopy",
     [ucs_ilog2(UCT_IFACE_FLAG_TAG_RNDV_ZCOPY)]   = "tag rndv zcopy",
     [ucs_ilog2(UCT_IFACE_FLAG_EP_CHECK)]         = "ep check",
-    [ucs_ilog2(UCT_IFACE_FLAG_EP_KEEPALIVE)]     = "ep keepalive"
+    [ucs_ilog2(UCT_IFACE_FLAG_EP_KEEPALIVE)]     = "ep keepalive",
+    [ucs_ilog2(UCT_IFACE_FLAG_BCAST)]            = "brodcast",
+    [ucs_ilog2(UCT_IFACE_FLAG_INCAST)]           = "incast"
 };
 
 static const char *ucp_wireup_event_flags[] = {
@@ -1960,6 +1962,73 @@ ucp_wireup_add_tag_lane(const ucp_wireup_select_params_t *select_params,
     return UCS_OK;
 }
 
+/* Lane for transport offloaded tag interface */
+static ucs_status_t
+ucp_wireup_add_coll_lane(const ucp_wireup_select_params_t *select_params,
+                         const ucp_wireup_select_info_t *am_info,
+                         ucp_err_handling_mode_t err_mode, int is_bcast,
+                         ucp_wireup_select_context_t *select_ctx)
+{
+    ucp_ep_h ep                          = select_params->ep;
+    ucp_wireup_criteria_t criteria       = {0};
+    ucp_wireup_select_info_t select_info = {0};
+    unsigned ep_init_flags               = ucp_wireup_ep_init_flags(
+                                                   select_params, select_ctx);
+    ucs_status_t status;
+
+    if (!(ucp_ep_get_context_features(ep) & UCP_FEATURE_GROUPS) ||
+        (ep_init_flags & UCP_EP_INIT_CREATE_AM_LANE_ONLY) ||
+        /* TODO: remove check below when UCP_ERR_HANDLING_MODE_PEER supports
+         *       collective transports
+         */
+        (err_mode != UCP_ERR_HANDLING_MODE_NONE)) {
+        return UCS_OK;
+    }
+
+    criteria.title              = is_bcast ? "bcast" : "incast";
+    criteria.remote_event_flags = 0;
+    criteria.calc_score         = ucp_wireup_am_score_func;
+    ucp_wireup_init_select_flags(&criteria.remote_iface_flags,
+                                 is_bcast ? UCT_IFACE_FLAG_BCAST :
+                                            UCT_IFACE_FLAG_INCAST, 0);
+    ucp_wireup_init_select_flags(&criteria.local_iface_flags,
+                                 is_bcast ? UCT_IFACE_FLAG_BCAST :
+                                            UCT_IFACE_FLAG_INCAST, 0);
+
+    status = ucp_wireup_select_transport(select_ctx, select_params, &criteria,
+                                         ucp_tl_bitmap_max, UINT64_MAX,
+                                         UINT64_MAX, UINT64_MAX, 0,
+                                         &select_info);
+    if ((status == UCS_OK) &&
+        (ucp_score_cmp(select_info.score,
+                       am_info->score) >= 0)) {
+        return ucp_wireup_add_lane(select_params, &select_info,
+                                   is_bcast ? UCP_LANE_TYPE_BCAST :
+                                              UCP_LANE_TYPE_INCAST,
+                                   /* do not show error */ 0, select_ctx);
+    }
+
+    return UCS_OK;
+}
+
+static ucp_lane_index_t
+ucp_wireup_add_bcast_lane(const ucp_wireup_select_params_t *select_params,
+                          const ucp_wireup_select_info_t *am_info,
+                          ucp_err_handling_mode_t err_mode,
+                          ucp_wireup_select_context_t *select_ctx)
+{
+    return ucp_wireup_add_coll_lane(select_params, am_info, err_mode, 1, select_ctx);
+}
+
+static ucp_lane_index_t
+ucp_wireup_add_incast_lane(const ucp_wireup_select_params_t *select_params,
+                           const ucp_wireup_select_info_t *am_info,
+                           ucp_err_handling_mode_t err_mode,
+                           ucp_wireup_select_context_t *select_ctx)
+{
+    return ucp_wireup_add_coll_lane(select_params, am_info, err_mode, 0, select_ctx);
+}
+
 static ucp_lane_index_t
 ucp_wireup_select_wireup_msg_lane(ucp_worker_h worker,
                                   unsigned ep_init_flags,
@@ -2158,6 +2227,18 @@ ucp_wireup_search_lanes(const ucp_wireup_select_params_t *select_params,
         return status;
     }
 
+    status = ucp_wireup_add_incast_lane(select_params, &am_info, err_mode,
+                                        select_ctx);
+    if (status != UCS_OK) {
+        return status;
+    }
+
+    status = ucp_wireup_add_bcast_lane(select_params, &am_info, err_mode,
+                                       select_ctx);
+    if (status != UCS_OK) {
+        return status;
+    }
+
     /* call ucp_wireup_add_am_bw_lanes after ucp_wireup_add_am_lane to
      * allow exclude AM lane from AM_BW list */
     status = ucp_wireup_add_am_bw_lanes(select_params, select_ctx);
@@ -2333,6 +2414,12 @@ ucp_wireup_construct_lanes(const ucp_wireup_select_params_t *select_params,
             !ucp_wireup_is_built_in_keepalive(ep->worker, lane, select_params, key)) {
             ucs_assert(key->keepalive_lane == UCP_NULL_LANE);
             key->keepalive_lane = lane;
+        }
+        if (select_ctx->lane_descs[lane].lane_types & UCS_BIT(UCP_LANE_TYPE_INCAST)) {
+            key->incast_lane = lane;
+        }
+        if (select_ctx->lane_descs[lane].lane_types & UCS_BIT(UCP_LANE_TYPE_BCAST)) {
+            key->bcast_lane = lane;
         }
     }
 
