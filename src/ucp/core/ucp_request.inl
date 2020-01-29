@@ -35,16 +35,17 @@
     (((_flags) & UCP_REQUEST_FLAG_SYNC)            ? 's' : '-')
 
 #define UCP_RECV_DESC_FMT \
-    "rdesc %p %c%c%c%c%c%c len %u+%u"
+    "rdesc %p %c%c%c%c%c%c%c len %u+%u"
 
 #define UCP_RECV_DESC_ARG(_rdesc) \
     (_rdesc), \
-    (((_rdesc)->flags & UCP_RECV_DESC_FLAG_UCT_DESC)      ? 't' : '-'), \
-    (((_rdesc)->flags & UCP_RECV_DESC_FLAG_EAGER)         ? 'e' : '-'), \
-    (((_rdesc)->flags & UCP_RECV_DESC_FLAG_EAGER_ONLY)    ? 'o' : '-'), \
-    (((_rdesc)->flags & UCP_RECV_DESC_FLAG_EAGER_SYNC)    ? 's' : '-'), \
-    (((_rdesc)->flags & UCP_RECV_DESC_FLAG_EAGER_OFFLOAD) ? 'f' : '-'), \
-    (((_rdesc)->flags & UCP_RECV_DESC_FLAG_RNDV)          ? 'r' : '-'), \
+    (((_rdesc)->flags & UCP_RECV_DESC_FLAG_UCT_DESC)        ? 't' : '-'), \
+    (((_rdesc)->flags & UCP_RECV_DESC_FLAG_UCT_DESC_SHARED) ? 'c' : '-'), \
+    (((_rdesc)->flags & UCP_RECV_DESC_FLAG_EAGER)           ? 'e' : '-'), \
+    (((_rdesc)->flags & UCP_RECV_DESC_FLAG_EAGER_ONLY)      ? 'o' : '-'), \
+    (((_rdesc)->flags & UCP_RECV_DESC_FLAG_EAGER_SYNC)      ? 's' : '-'), \
+    (((_rdesc)->flags & UCP_RECV_DESC_FLAG_EAGER_OFFLOAD)   ? 'f' : '-'), \
+    (((_rdesc)->flags & UCP_RECV_DESC_FLAG_RNDV)            ? 'r' : '-'), \
     (_rdesc)->payload_offset, \
     ((_rdesc)->length - (_rdesc)->payload_offset)
 
@@ -611,7 +612,9 @@ ucp_recv_desc_init(ucp_worker_h worker, void *data, size_t length,
         ucs_assert(priv_length <= UCP_WORKER_HEADROOM_PRIV_SIZE);
         data_hdr               = UCS_PTR_BYTE_OFFSET(data, -data_offset);
         rdesc                  = (ucp_recv_desc_t *)data_hdr - 1;
-        rdesc->flags           = rdesc_flags | UCP_RECV_DESC_FLAG_UCT_DESC;
+        rdesc->flags           = rdesc_flags | UCP_RECV_DESC_FLAG_UCT_DESC |
+                                 ((am_flags & UCT_CB_PARAM_FLAG_SHARED) ?
+                                  UCP_RECV_DESC_FLAG_UCT_DESC_SHARED : 0);
         rdesc->uct_desc_offset = UCP_WORKER_HEADROOM_PRIV_SIZE - priv_length;
         status                 = UCS_INPROGRESS;
     } else {
@@ -636,15 +639,24 @@ ucp_recv_desc_init(ucp_worker_h worker, void *data, size_t length,
 }
 
 static UCS_F_ALWAYS_INLINE void
-ucp_recv_desc_release(ucp_recv_desc_t *rdesc)
+ucp_recv_desc_release(ucp_recv_desc_t *rdesc, uct_iface_h iface)
 {
-    void *uct_desc;
-
     ucs_trace_req("release receive descriptor %p", rdesc);
     if (ucs_unlikely(rdesc->flags & UCP_RECV_DESC_FLAG_UCT_DESC)) {
         /* uct desc is slowpath */
-        uct_desc = UCS_PTR_BYTE_OFFSET(rdesc, -rdesc->uct_desc_offset);
-        uct_iface_release_desc(uct_desc);
+        uct_recv_desc_t *uct_desc =
+                UCS_PTR_BYTE_OFFSET(rdesc, -rdesc->uct_desc_offset);
+        if (ucs_unlikely(rdesc->flags & UCP_RECV_DESC_FLAG_UCT_DESC_SHARED)) {
+            /*
+             * Note that there's an inherent problem with shared descriptors:
+             * since the descriptor is shared, all the processes observe the
+             * same flags - including the owner... so we ask the transport to
+             * tell UCP if it's in fact the owner as well.
+             */
+            uct_iface_release_shared_desc(iface, uct_desc);
+        } else {
+            uct_iface_release_desc(uct_desc);
+        }
     } else {
         ucs_mpool_put_inline(rdesc);
     }
@@ -660,7 +672,7 @@ ucp_request_complete_am_recv(ucp_request_t *req, ucs_status_t status)
     UCS_PROFILE_REQUEST_EVENT(req, "complete_recv", status);
 
     if (req->recv.am.desc->flags & UCP_RECV_DESC_FLAG_RNDV) {
-        ucp_recv_desc_release(req->recv.am.desc);
+        ucp_recv_desc_release(req->recv.am.desc, NULL);
     } else {
         req->recv.am.desc->flags |= UCP_RECV_DESC_FLAG_COMPLETED;
     }

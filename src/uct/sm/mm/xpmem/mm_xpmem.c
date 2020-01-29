@@ -13,6 +13,7 @@
 
 #include <uct/sm/mm/base/mm_md.h>
 #include <uct/sm/mm/base/mm_iface.h>
+#include <uct/sm/mm/coll/mm_coll_iface.h>
 #include <ucs/datastruct/khash.h>
 #include <ucs/debug/memtrack.h>
 #include <ucs/type/init_once.h>
@@ -547,4 +548,8 @@ static uct_mm_md_mapper_ops_t uct_xpmem_md_ops = {
 };
 
 UCT_MM_TL_DEFINE(xpmem, &uct_xpmem_md_ops, uct_xpmem_rkey_unpack,
-                 uct_xpmem_rkey_release, "XPMEM_")
+                 uct_xpmem_rkey_release, "XPMEM_", _)
+UCT_MM_TL_DEFINE(xpmem, &uct_xpmem_md_ops, uct_xpmem_rkey_unpack,
+                 uct_xpmem_rkey_release, "XPMEM_BCAST_", _bcast_)
+UCT_MM_TL_DEFINE(xpmem, &uct_xpmem_md_ops, uct_xpmem_rkey_unpack,
+                 uct_xpmem_rkey_release, "XPMEM_INCAST_", _incast_)

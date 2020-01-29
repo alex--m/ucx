@@ -154,10 +154,15 @@ static void ucp_worker_set_am_handlers(ucp_worker_iface_t *wiface, int is_proxy)
     ucp_context_h context = worker->context;
     ucs_status_t status;
     unsigned am_id;
+    void *cb_arg;
 
     ucs_trace_func("iface=%p is_proxy=%d", wiface->iface, is_proxy);
 
-    for (am_id = 0; am_id < UCP_AM_ID_LAST; ++am_id) {
+    for (am_id = 0; am_id < UCP_AM_ID_MAX; ++am_id) {
+        if (!ucp_am_handlers[am_id].cb) {
+            continue;
+        }
+
         if (!(wiface->attr.cap.flags & (UCT_IFACE_FLAG_AM_SHORT |
                                         UCT_IFACE_FLAG_AM_BCOPY |
                                         UCT_IFACE_FLAG_AM_ZCOPY))) {
@@ -188,9 +193,11 @@ static void ucp_worker_set_am_handlers(ucp_worker_iface_t *wiface, int is_proxy)
                                               wiface,
                                               ucp_am_handlers[am_id].flags);
         } else {
+            cb_arg = (ucp_am_handlers[am_id].flags & UCT_CB_FLAG_ALT_ARG) ?
+                      ucp_am_handlers[am_id].alt_arg : worker;
             status = uct_iface_set_am_handler(wiface->iface, am_id,
                                               ucp_am_handlers[am_id].cb,
-                                              worker,
+                                              cb_arg,
                                               ucp_am_handlers[am_id].flags);
         }
         if (status != UCS_OK) {
@@ -224,7 +231,11 @@ static void ucp_worker_remove_am_handlers(ucp_worker_h worker)
                                         UCT_IFACE_FLAG_AM_ZCOPY))) {
             continue;
         }
-        for (am_id = 0; am_id < UCP_AM_ID_LAST; ++am_id) {
+        for (am_id = 0; am_id < UCP_AM_ID_MAX; ++am_id) {
+            if (!ucp_am_handlers[am_id].cb) {
+                continue;
+            }
+
             if (context->config.features & ucp_am_handlers[am_id].features) {
                 (void)uct_iface_set_am_handler(wiface->iface,
                                                am_id, ucp_stub_am_handler,
@@ -241,7 +252,7 @@ static void ucp_worker_am_tracer(void *arg, uct_am_trace_type_t type,
     ucp_worker_h worker = arg;
     ucp_am_tracer_t tracer;
 
-    if (id < UCP_AM_ID_LAST) {
+    if (id < UCP_AM_ID_MAX) {
         tracer = ucp_am_handlers[id].tracer;
         if (tracer != NULL) {
             tracer(worker, type, id, data, length, buffer, max);
@@ -929,8 +940,10 @@ static int ucp_worker_iface_find_better(ucp_worker_h worker,
         if (/* 1. Supports all capabilities of the target iface (at least),
              *    except ...CONNECT_TO... caps. */
             ucs_test_all_flags(if_iter->attr.cap.flags, test_flags) &&
+            ((if_iter->attr.cap.flags & UCT_IFACE_FLAG_INCAST) == 0) &&
+            ((if_iter->attr.cap.flags & UCT_IFACE_FLAG_BCAST) == 0) &&
             /* 2. Has the same or better performance characteristics */
-            (if_iter->attr.overhead <= wiface->attr.overhead) &&
+            (if_iter->attr.overhead_short <= wiface->attr.overhead_short) &&
             (ucp_tl_iface_bandwidth(ctx, &if_iter->attr.bandwidth) >= bw_cur) &&
             /* swap latencies in args list since less is better */
             (ucp_score_prio_cmp(latency_cur,  if_iter->attr.priority,
@@ -1066,6 +1079,15 @@ static ucs_status_t ucp_worker_add_resource_ifaces(ucp_worker_h worker)
         iface_params.field_mask = UCT_IFACE_PARAM_FIELD_OPEN_MODE;
         resource = &context->tl_rscs[tl_id];
 
+        if ((context->config.features & UCP_FEATURE_GROUPS) &&
+            (context->config.num_local_peers != 0)) {
+            iface_params.field_mask          |= UCT_IFACE_PARAM_FIELD_COLL_INFO;
+            iface_params.host_info.proc_cnt   = context->config.num_local_peers;
+            iface_params.host_info.proc_idx   = context->config.my_local_peer_idx;
+            iface_params.global_info.proc_cnt = context->config.num_global_peers;
+            iface_params.global_info.proc_idx = context->config.my_global_peer_idx;
+        }
+
         if (resource->flags & UCP_TL_RSC_FLAG_SOCKADDR) {
             iface_params.open_mode            = UCT_IFACE_OPEN_MODE_SOCKADDR_CLIENT;
         } else {
@@ -1097,9 +1119,13 @@ static ucs_status_t ucp_worker_add_resource_ifaces(ucp_worker_h worker)
 
     worker->scalable_tl_bitmap = 0;
     ucs_for_each_bit(tl_id, context->tl_bitmap) {
-        ucs_assert(ucp_worker_is_tl_p2p(worker, tl_id) ||
-                   ucp_worker_is_tl_2iface(worker, tl_id) ||
-                   ucp_worker_is_tl_2sockaddr(worker, tl_id));
+        if (!(ucp_worker_is_tl_p2p(worker, tl_id) ||
+              ucp_worker_is_tl_2iface(worker, tl_id) ||
+              ucp_worker_is_tl_2sockaddr(worker, tl_id))) {
+            tl_bitmap &= ~UCS_BIT(tl_id);
+            continue;
+        }
+
         wiface = ucp_worker_iface(worker, tl_id);
         if (ucp_is_scalable_transport(context, wiface->attr.max_num_eps)) {
             worker->scalable_tl_bitmap |= UCS_BIT(tl_id);
@@ -1520,7 +1546,8 @@ static void ucp_worker_init_device_atomics(ucp_worker_h worker)
     dummy_iface_attr.bandwidth.dedicated = 1e12;
     dummy_iface_attr.bandwidth.shared    = 0;
     dummy_iface_attr.cap_flags           = UINT64_MAX;
-    dummy_iface_attr.overhead            = 0;
+    dummy_iface_attr.overhead_short      = 0;
+    dummy_iface_attr.overhead_bcopy      = 0;
     dummy_iface_attr.priority            = 0;
     dummy_iface_attr.lat_ovh             = 0;
 

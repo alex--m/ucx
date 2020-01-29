@@ -91,7 +91,8 @@ static ucs_status_t uct_rocm_ipc_iface_query(uct_iface_h tl_iface,
     iface_attr->latency                 = ucs_linear_func_make(80e-9, 0);
     iface_attr->bandwidth.dedicated     = 10.0 * UCS_GBYTE; /* 10 GB */
     iface_attr->bandwidth.shared        = 0;
-    iface_attr->overhead                = 0.4e-6; /* 0.4 us */
+    iface_attr->overhead_short          = 0.4e-6; /* 0.4 us */
+    iface_attr->overhead_bcopy          = 0.5e-6; /* 0.5 us */
 
     return UCS_OK;
 }

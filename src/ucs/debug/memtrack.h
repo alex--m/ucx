@@ -104,6 +104,8 @@ void *ucs_calloc(size_t nmemb, size_t size, const char *name);
 void *ucs_realloc(void *ptr, size_t size, const char *name);
 int ucs_posix_memalign(void **ptr, size_t boundary, size_t size,
                        const char *name);
+int ucs_posix_memalign_realloc(void **ptr, size_t boundary, size_t size,
+                               const char *name);
 void ucs_free(void *ptr);
 void *ucs_mmap(void *addr, size_t length, int prot, int flags, int fd,
                off_t offset, const char *name);
@@ -140,6 +142,12 @@ char *ucs_strndup(const char *src, size_t n, const char *name);
 #define ucs_strndup(_src, _n, ...)                 strndup(_src, _n)
 
 #endif /* ENABLE_MEMTRACK */
+
+#define UCS_ALLOC_CHECK(size, name) ({ \
+    void* ptr = ucs_malloc(size, name); \
+    if (ptr == 0) return UCS_ERR_NO_MEMORY; \
+    ptr; \
+})
 
 END_C_DECLS
 

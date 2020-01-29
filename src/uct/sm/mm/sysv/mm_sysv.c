@@ -10,6 +10,7 @@
 
 #include <uct/sm/mm/base/mm_md.h>
 #include <uct/sm/mm/base/mm_iface.h>
+#include <uct/sm/mm/coll/mm_coll_iface.h>
 #include <ucs/debug/memtrack.h>
 #include <ucs/debug/log.h>
 #include <ucs/sys/sys.h>
@@ -26,6 +27,7 @@ typedef struct uct_sysv_packed_rkey {
 typedef struct uct_sysv_md_config {
     uct_mm_md_config_t      super;
 } uct_sysv_md_config_t;
+
 
 static ucs_config_field_t uct_sysv_md_config_table[] = {
   {"MM_", "", NULL,
@@ -197,4 +199,8 @@ static uct_mm_md_mapper_ops_t uct_sysv_md_ops = {
 };
 
 UCT_MM_TL_DEFINE(sysv, &uct_sysv_md_ops, uct_sysv_rkey_unpack,
-                 uct_sysv_rkey_release, "SYSV_")
+                 uct_sysv_rkey_release, "SYSV_", _)
+UCT_MM_TL_DEFINE(sysv, &uct_sysv_md_ops, uct_sysv_rkey_unpack,
+                 uct_sysv_rkey_release, "SYSV_BCAST_", _bcast_)
+UCT_MM_TL_DEFINE(sysv, &uct_sysv_md_ops, uct_sysv_rkey_unpack,
+                 uct_sysv_rkey_release, "SYSV_INCAST_", _incast_)

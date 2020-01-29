@@ -466,7 +466,7 @@ void ucp_proto_common_calc_perf(const ucp_proto_common_init_params_t *params,
     /* Collect latency, overhead, bandwidth from all lanes */
     ucs_for_each_bit(lane, perf_params->lane_map) {
         iface_attr = ucp_proto_common_get_iface_attr(&params->super, lane);
-        overhead  += iface_attr->overhead;
+        overhead  += iface_attr->overhead_short;
         latency    = ucs_max(ucp_tl_iface_latency(context, &iface_attr->latency),
                              latency);
         bandwidth += ucp_proto_common_iface_bandwidth(params, iface_attr);

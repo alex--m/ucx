@@ -71,6 +71,8 @@ void ucp_ep_config_key_reset(ucp_ep_config_key_t *key)
     key->am_lane          = UCP_NULL_LANE;
     key->wireup_msg_lane  = UCP_NULL_LANE;
     key->cm_lane          = UCP_NULL_LANE;
+    key->incast_lane      = UCP_NULL_LANE;
+    key->bcast_lane       = UCP_NULL_LANE;
     key->rkey_ptr_lane    = UCP_NULL_LANE;
     key->tag_lane         = UCP_NULL_LANE;
     key->rma_bw_md_map    = 0;
@@ -1132,6 +1134,8 @@ int ucp_ep_config_is_equal(const ucp_ep_config_key_t *key1,
         (key1->tag_lane != key2->tag_lane) ||
         (key1->wireup_msg_lane != key2->wireup_msg_lane) ||
         (key1->cm_lane != key2->cm_lane) ||
+        (key1->incast_lane != key2->incast_lane) ||
+        (key1->bcast_lane != key2->bcast_lane) ||
         (key1->rkey_ptr_lane != key2->rkey_ptr_lane) ||
         (key1->ep_check_map != key2->ep_check_map) ||
         (key1->err_mode != key2->err_mode)) {
@@ -1185,7 +1189,7 @@ static void ucp_ep_config_calc_params(ucp_worker_h worker,
             if (md_attr->cap.flags & UCT_MD_FLAG_REG) {
                 params->reg_growth   += md_attr->reg_cost.m;
                 params->reg_overhead += md_attr->reg_cost.c;
-                params->overhead     += iface_attr->overhead;
+                params->overhead     += iface_attr->overhead_bcopy;
                 params->latency      += ucp_tl_iface_latency(context,
                                                              &iface_attr->latency);
             }
@@ -2151,6 +2155,16 @@ void ucp_ep_config_lane_info_str(ucp_worker_h worker,
 
     if (lane == key->tag_lane) {
         snprintf(p, endp - p, " tag_offload");
+        p += strlen(p);
+    }
+
+    if (lane == key->incast_lane) {
+        snprintf(p, endp - p, " incast");
+        p += strlen(p);
+    }
+
+    if (lane == key->bcast_lane) {
+        snprintf(p, endp - p, " bcast");
         p += strlen(p);
     }
 

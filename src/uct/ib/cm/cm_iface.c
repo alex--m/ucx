@@ -409,7 +409,7 @@ static ucs_status_t uct_cm_iface_query(uct_iface_h tl_iface,
         return status;
     }
 
-    iface_attr->overhead = 1200e-9;
+    iface_attr->overhead_bcopy = 1200e-9;
 
     mtu = ucs_min(IB_CM_SIDR_REQ_PRIVATE_DATA_SIZE - sizeof(uct_cm_hdr_t),
                   UINT8_MAX);
