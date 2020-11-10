@@ -1407,7 +1407,7 @@ int uct_ib_get_cqe_size(int cqe_size_min)
     return cqe_size;
 }
 
-static ucs_status_t
+ucs_status_t
 uct_ib_device_get_roce_ndev_name(uct_ib_device_t *dev, uint8_t port_num,
                                  uint8_t gid_index, char *ndev_name, size_t max)
 {

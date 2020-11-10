@@ -206,6 +206,8 @@ struct uct_ud_iface {
         unsigned                  last_len;
         khash_t(uct_ud_iface_gid) hash;
     } gid_table;
+
+    int is_mcast_iface;
 };
 
 
@@ -226,6 +228,7 @@ struct uct_ud_ctl_hdr {
         } conn_req;
         struct {
             uint32_t            src_ep_id;
+            uint32_t            coll_id; //TODO: remove and add instead of src_ep_id
         } conn_rep;
         uint32_t                data;
     };
@@ -395,6 +398,9 @@ uct_ud_grh_get_dgid_len(struct ibv_grh *grh)
 static UCS_F_ALWAYS_INLINE int
 uct_ud_iface_check_grh(uct_ud_iface_t *iface, void *packet, int is_grh_present)
 {
+    if (iface->is_mcast_iface) {
+        return 1;
+    }
     struct ibv_grh *grh = (struct ibv_grh *)packet;
     size_t gid_len;
     union ibv_gid *gid;
