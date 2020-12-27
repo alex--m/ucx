@@ -1186,7 +1186,7 @@ ucp_am_handler_common(ucp_worker_h worker, ucp_am_hdr_t *am_hdr, size_t hdr_size
     if (desc != NULL) {
         if (status != UCS_INPROGRESS) {
             /* data is not needed - release previously initialized desc */
-            ucp_recv_desc_release(desc);
+            ucp_recv_desc_release(desc, NULL);
         }
         /* initialized desc means that UCT_CB_PARAM_FLAG_DESC is not set in
          * am_flags, thus UCS_OK is the only valid return code

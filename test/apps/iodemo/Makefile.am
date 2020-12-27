@@ -17,6 +17,7 @@ io_demo_LDFLAGS  = -ldl
 
 io_demo_LDADD = \
 	$(top_builddir)/src/ucs/libucs.la \
+	$(top_builddir)/src/ucm/libucm.la \
 	$(top_builddir)/src/ucp/libucp.la
 
 io_demo_SOURCES = \
