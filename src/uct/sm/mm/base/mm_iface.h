@@ -258,10 +258,13 @@ uct_mm_iface_query_tl_devices(uct_md_h md,
     UCT_TL_DEFINE_ENTRY(&UCT_COMPONENT_NAME(_name##_tl_suffix).super, \
                         _name##_tl_suffix, uct_mm_iface_query_tl_devices, \
                         uct_mm##_tl_suffix##_iface_t, \
-                        _cfg_prefix, _cfg_table, uct_mm_iface_config_t)
+                        _cfg_prefix, _cfg_table, \
+                        uct_mm##_tl_suffix##_iface_config_t)
 
 
 extern ucs_config_field_t uct_mm_iface_config_table[];
+extern ucs_config_field_t uct_mm_incast_iface_config_table[];
+extern ucs_config_field_t uct_mm_bcast_iface_config_table[];
 
 static UCS_F_ALWAYS_INLINE int
 uct_mm_iface_fifo_flag_has_new_data(uint8_t flags,
