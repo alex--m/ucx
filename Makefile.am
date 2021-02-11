@@ -45,6 +45,10 @@ if HAVE_UCG
 SUBDIRS += $(UCG_SUBDIR)
 endif
 
+if HAVE_UCF
+SUBDIRS += $(UCF_SUBDIR)
+endif
+
 SUBDIRS += \
 	src/tools/vfs \
 	src/tools/info \
