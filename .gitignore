@@ -73,6 +73,8 @@ docs/uml/uml.tag
 test-driver
 src/ucp/api/ucp_version.h
 src/ucp/core/ucp_version.c
+src/ucf/api/ucf_version.h
+src/ucf/base/ucf_version.c
 test/mpi/run_mpi.sh
 *.tap
 valgrind.xml

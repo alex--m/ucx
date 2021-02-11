@@ -1,0 +1,22 @@
+/*
+ * Copyright (C) Huawei Technologies Co., Ltd. 2021.  ALL RIGHTS RESERVED.
+ * See file LICENSE for terms.
+ */
+
+
+/**
+ * Construct a UCF version identifier from major and minor version numbers.
+ */
+#define UCF_VERSION(_major, _minor) \
+	(((_major) << UCF_VERSION_MAJOR_SHIFT) | \
+	 ((_minor) << UCF_VERSION_MINOR_SHIFT))
+#define UCF_VERSION_MAJOR_SHIFT    24
+#define UCF_VERSION_MINOR_SHIFT    16
+
+
+/**
+ * UCF API version is @MAJOR_VERSION@.@MINOR_VERSION@
+ */
+#define UCF_API_MAJOR    @MAJOR_VERSION@
+#define UCF_API_MINOR    @MINOR_VERSION@
+#define UCF_API_VERSION  UCF_VERSION(@MAJOR_VERSION@, @MINOR_VERSION@)
