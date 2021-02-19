@@ -262,7 +262,7 @@ typedef struct uct_mm_iface {
                   uct_sm_base_query_tl_devices, \
                   uct_mm##_tl_suffix##iface_t, \
                   "MM_" _cfg_prefix, \
-                  _cfg_table##_tl_suffix, \
+                  _cfg_table, \
                   uct_mm##_tl_suffix##iface_config_t);
 
 
