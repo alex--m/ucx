@@ -190,8 +190,6 @@ void ucg_test::set_ucg_config(ucg_config_t *config,
     std::stringstream ss;
     ss << test_param;
     ucg_config_modify(config, "PLANNERS", ss.str().c_str());
-    /* prevent configuration warnings in the UCP testing */
-    ucg_config_modify(config, "WARN_INVALID_CONFIG", "no");
 }
 
 void ucg_test::modify_config(const std::string& name, const std::string& value,
@@ -256,55 +254,7 @@ bool ucg_test::check_test_param(const std::string& name,
     }
 
     bool result;
-    if (status == UCS_OK) {
-        ucg_cleanup(ucgh);
-        result = true;
-    } else if (status == UCS_ERR_NO_DEVICE) {
-        result = false;
-    } else {
-        UCS_TEST_ABORT("Failed to create context (" << test_case_name << "): "
-                       << ucs_status_string(status));
-    }
-
-    UCS_TEST_MESSAGE << "checking " << name << ": " << (result ? "yes" : "no");
-    cache[name] = result;
-    return result;
-}
-
-static ucs_status_t ucg_worker_create(ucg_context_h context,
-                                      const ucp_worker_params_t *params,
-                                      ucp_worker_h *worker_p)
-{
-    return ucp_worker_create(ucg_context_get_ucp(context), params, worker_p);
-}
-
-ucg_test_base::rank::rank(const ucg_test_param& test_param,
-                          ucg_config_t* ucg_config,
                           const ucp_worker_params_t& worker_params,
-                          const ucg_test_base *test_owner)
-{
-    ucg_test_param comm_param = test_param;
-    ucp_worker_params_t local_worker_params = worker_params;
-    int num_workers;
-
-    if (test_param.thread_type == MULTI_THREAD_CONTEXT) {
-        num_workers = MT_TEST_NUM_THREADS;
-        comm_param.ctx_params.ucp.mt_workers_shared = 1;
-        local_worker_params.thread_mode = UCS_THREAD_MODE_SINGLE;
-    } else if (test_param.thread_type == MULTI_THREAD_WORKER) {
-        num_workers = 1;
-        comm_param.ctx_params.ucp.mt_workers_shared = 0;
-        local_worker_params.thread_mode = UCS_THREAD_MODE_MULTI;
-    } else {
-        num_workers = 1;
-        comm_param.ctx_params.ucp.mt_workers_shared = 0;
-        local_worker_params.thread_mode = UCS_THREAD_MODE_SINGLE;
-    }
-
-    comm_param.ctx_params.ucp.field_mask |= UCP_PARAM_FIELD_MT_WORKERS_SHARED;
-    local_worker_params.field_mask       |= UCP_WORKER_PARAM_FIELD_THREAD_MODE;
-
-    ucg_test::set_ucg_config(ucg_config, comm_param);
 
     {
         scoped_log_handler slh(hide_errors_logger);

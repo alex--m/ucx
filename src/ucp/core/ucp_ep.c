@@ -692,7 +692,7 @@ ucs_status_t ucp_worker_mem_type_eps_create(ucp_worker_h worker)
             continue;
         }
 
-        status = ucp_address_pack(worker, NULL, &mem_access_tls, pack_flags,
+        status = ucp_address_pack(worker, NULL, &mem_access_tls, 0, pack_flags,
                                   context->config.ext.worker_addr_version, NULL,
                                   UINT_MAX, &address_length, &address_buffer);
         if (status != UCS_OK) {
@@ -711,7 +711,7 @@ ucs_status_t ucp_worker_mem_type_eps_create(ucp_worker_h worker)
         /* create memtype UCP EPs after blocking async context, because they set
          * INTERNAL flag (setting EP flags is expected to be guarded) */
         UCS_ASYNC_BLOCK(&worker->async);
-        status = ucp_ep_create_to_worker_addr(worker, &ucp_tl_bitmap_max,
+        status = ucp_ep_create_to_worker_addr(worker, &ucp_tl_bitmap_max, 0,
                                               &local_address,
                                               UCP_EP_INIT_FLAG_MEM_TYPE |
                                               UCP_EP_INIT_FLAG_INTERNAL,
@@ -792,7 +792,7 @@ ucs_status_t ucp_ep_init_create_wireup(ucp_ep_h ep, unsigned ep_init_flags,
         key.wireup_msg_lane = 0;
     }
 
-    status = ucp_worker_get_ep_config(ep->worker, &key, ep_init_flags,
+    status = ucp_worker_get_ep_config(ep->worker, &key, NULL, 0, ep_init_flags,
                                       &ep->cfg_index);
     if (status != UCS_OK) {
         return status;
@@ -816,6 +816,7 @@ ucs_status_t ucp_ep_init_create_wireup(ucp_ep_h ep, unsigned ep_init_flags,
 ucs_status_t
 ucp_ep_create_to_worker_addr(ucp_worker_h worker,
                              const ucp_tl_bitmap_t *local_tl_bitmap,
+                             unsigned iface_tl_base,
                              const ucp_unpacked_address_t *remote_address,
                              unsigned ep_init_flags, const char *message,
                              unsigned *addr_indices, ucp_ep_h *ep_p)
@@ -833,7 +834,7 @@ ucp_ep_create_to_worker_addr(ucp_worker_h worker,
 
     /* initialize transport endpoints */
     status = ucp_wireup_init_lanes(ep, ep_init_flags, local_tl_bitmap,
-                                   remote_address, addr_indices);
+                                   iface_tl_base, remote_address, addr_indices);
     if (status != UCS_OK) {
         goto err_delete;
     }
@@ -1086,7 +1087,7 @@ ucp_ep_create_api_to_worker_addr(ucp_worker_h worker,
         goto out_resolve_remote_id;
     }
 
-    status = ucp_ep_create_to_worker_addr(worker, &ucp_tl_bitmap_max,
+    status = ucp_ep_create_to_worker_addr(worker, &ucp_tl_bitmap_max, 0,
                                           &remote_address, ep_init_flags,
                                           "from api call", addr_indices, &ep);
     if (status != UCS_OK) {
@@ -2578,6 +2579,11 @@ ucs_status_t ucp_ep_config_init(ucp_worker_h worker, ucp_ep_config_t *config,
             continue;
         }
 
+        if (rsc_index >= context->num_tls) {
+            /* Collective transport - find original interface */
+            rsc_index = worker->ifaces[rsc_index]->rsc_index;
+        }
+
         config->md_index[lane] = context->tl_rscs[rsc_index].md_index;
         if (ucp_ep_config_connect_p2p(worker, &config->key, rsc_index)) {
             config->p2p_lanes |= UCS_BIT(lane);
@@ -2864,7 +2870,10 @@ ucs_status_t ucp_ep_config_init(ucp_worker_h worker, ucp_ep_config_t *config,
             continue;
         }
 
-        rsc_index  = config->key.lanes[lane].rsc_index;
+        rsc_index = config->key.lanes[lane].rsc_index;
+        if (rsc_index >= context->num_tls) {
+            rsc_index = worker->ifaces[rsc_index]->rsc_index;
+        }
 
         if (rsc_index != UCP_NULL_RESOURCE) {
             iface_attr = ucp_worker_iface_get_attr(worker, rsc_index);
@@ -3640,8 +3649,8 @@ static ucs_status_t ucp_ep_query_transport(ucp_ep_h ep, ucp_ep_attr_t *attr)
                                     lane_index * attr->transports.entry_size);
 
         /* Each field updated in the following block must have its ending offset
-         * compared to attr->transports.entry_size before the field is 
-         * updated. If the field's ending offset is greater than the 
+         * compared to attr->transports.entry_size before the field is
+         * updated. If the field's ending offset is greater than the
          * attr->transports.entry_size value, the field cannot be updated because
          * that will cause a storage overlay.
          */

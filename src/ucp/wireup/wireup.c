@@ -211,7 +211,7 @@ ucp_wireup_msg_prepare(ucp_ep_h ep, uint8_t type,
     }
 
     /* pack all addresses */
-    status = ucp_address_pack(ep->worker, ep, tl_bitmap, pack_flags,
+    status = ucp_address_pack(ep->worker, ep, tl_bitmap, 0, pack_flags,
                               context->config.ext.worker_addr_version,
                               lanes2remote, UINT_MAX, address_length_p,
                               address_p);
@@ -589,7 +589,7 @@ ucp_wireup_process_pre_request(ucp_worker_h worker, ucp_ep_h ep,
 
     /* initialize transport endpoints */
     status = ucp_wireup_init_lanes(ep, ep_init_flags, &ucp_tl_bitmap_max,
-                                   remote_address, addr_indices);
+                                   0, remote_address, addr_indices);
     if (status != UCS_OK) {
         goto err_ep_set_failed;
     }
@@ -684,7 +684,7 @@ ucp_wireup_process_request(ucp_worker_h worker, ucp_ep_h ep,
 
     /* Initialize lanes (possible destroy existing lanes) */
     status = ucp_wireup_init_lanes(ep, ep_init_flags, &ucp_tl_bitmap_max,
-                                   remote_address, addr_indices);
+                                   0, remote_address, addr_indices);
     if (status != UCS_OK) {
         goto err_set_ep_failed;
     }
@@ -847,7 +847,7 @@ ucp_wireup_send_ep_removed(ucp_worker_h worker, const ucp_wireup_msg_t *msg,
 
     /* Initialize lanes of the reply EP */
     status = ucp_wireup_init_lanes(reply_ep, ep_init_flags, &ucp_tl_bitmap_max,
-                                   remote_address, addr_indices);
+                                   0, remote_address, addr_indices);
     if (status != UCS_OK) {
         goto out_delete_ep;
     }
@@ -1175,7 +1175,8 @@ ucp_wireup_connect_lane(ucp_ep_h ep, unsigned ep_init_flags,
     ucs_assert_always(addr_index <= remote_address->address_count);
 
     rsc_index  = ucp_ep_get_rsc_index(ep, lane);
-    wiface     = ucp_worker_iface(worker, rsc_index);
+    wiface     = ucp_worker_iface_with_offset(worker, rsc_index,
+                                              &ucp_tl_bitmap_max, 0);
 
     /*
      * create a wireup endpoint which will start connection establishment
@@ -1514,6 +1515,7 @@ ucp_wireup_check_config_intersect(ucp_ep_h ep, ucp_ep_config_key_t *new_key,
 
 ucs_status_t ucp_wireup_init_lanes(ucp_ep_h ep, unsigned ep_init_flags,
                                    const ucp_tl_bitmap_t *local_tl_bitmap,
+                                   unsigned iface_tl_base,
                                    const ucp_unpacked_address_t *remote_address,
                                    unsigned *addr_indices)
 {
@@ -1563,7 +1565,7 @@ ucs_status_t ucp_wireup_init_lanes(ucp_ep_h ep, unsigned ep_init_flags,
         UCS_BITMAP_AND_INPLACE(&tl_bitmap, current_tl_bitmap);
     }
 
-    status = ucp_wireup_select_lanes(ep, ep_init_flags, tl_bitmap,
+    status = ucp_wireup_select_lanes(ep, ep_init_flags, tl_bitmap, iface_tl_base,
                                      remote_address, addr_indices, &key, 1);
     if (status != UCS_OK) {
         goto out;
@@ -1580,7 +1582,8 @@ ucs_status_t ucp_wireup_init_lanes(ucp_ep_h ep, unsigned ep_init_flags,
     ucp_wireup_get_reachable_mds(ep, ep_init_flags, remote_address, &key);
 
     /* Load new configuration */
-    status = ucp_worker_get_ep_config(worker, &key, ep_init_flags,
+    status = ucp_worker_get_ep_config(worker, &key, local_tl_bitmap,
+                                      iface_tl_base, ep_init_flags,
                                       &new_cfg_index);
     if (status != UCS_OK) {
         goto out;

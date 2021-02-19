@@ -184,6 +184,11 @@ struct ucp_unpacked_address {
     ((int)((_ae) - (_unpacked_address)->address_list))
 
 
+#define ucp_add_rsc_index_offset(_rsc_index, _tl_bitmap, _iface_tl_base) \
+        ((_iface_tl_base) + UCS_BITMAP_POPCOUNT_UPTO_INDEX((_tl_bitmap), \
+                                                           (_rsc_index)));
+
+
 /**
  * Get multiple addresses length of resources specified in tl_bitmap.
  * For every resource in tl_bitmap:
@@ -231,6 +236,7 @@ ucp_address_length(ucp_worker_h worker, const ucp_ep_config_key_t *key,
  */
 ucs_status_t ucp_address_pack(ucp_worker_h worker, ucp_ep_h ep,
                               const ucp_tl_bitmap_t *tl_bitmap,
+                              unsigned iface_id_base,
                               unsigned pack_flags,
                               ucp_object_version_t addr_version,
                               const ucp_lane_index_t *lanes2remote,

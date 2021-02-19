@@ -146,12 +146,12 @@ ucs_status_t uct_mm_iface_flush(uct_iface_h tl_iface, unsigned flags,
 
 ucs_status_t uct_mm_iface_query(uct_iface_h tl_iface, uct_iface_attr_t *iface_attr)
 {
-    uct_mm_iface_t *iface = ucs_derived_of(tl_iface, uct_mm_iface_t);
-    uct_mm_md_t    *md    = ucs_derived_of(iface->super.super.super.md, uct_mm_md_t);
+    uct_mm_base_iface_t *iface = ucs_derived_of(tl_iface, uct_mm_base_iface_t);
+    uct_mm_md_t *md            = ucs_derived_of(iface->super.super.md, uct_mm_md_t);
     int attach_shm_file;
     ucs_status_t status;
 
-    uct_base_iface_query(&iface->super.super.super, iface_attr);
+    uct_base_iface_query(&iface->super.super, iface_attr);
 
     /* default values for all shared memory transports */
     iface_attr->cap.put.max_short       = UINT_MAX;
@@ -169,9 +169,9 @@ ucs_status_t uct_mm_iface_query(uct_iface_h tl_iface, uct_iface_attr_t *iface_at
     iface_attr->cap.get.align_mtu       = iface_attr->cap.get.opt_zcopy_align;
     iface_attr->cap.get.max_iov         = 1;
 
-    iface_attr->cap.am.max_short        = iface->super.config.fifo_elem_size -
+    iface_attr->cap.am.max_short        = iface->config.fifo_elem_size -
                                           sizeof(uct_mm_fifo_element_t);
-    iface_attr->cap.am.max_bcopy        = iface->super.config.seg_size;
+    iface_attr->cap.am.max_bcopy        = iface->config.seg_size;
     iface_attr->cap.am.min_zcopy        = 0;
     iface_attr->cap.am.max_zcopy        = 0;
     iface_attr->cap.am.opt_zcopy_align  = UCS_SYS_CACHE_LINE_SIZE;
@@ -192,7 +192,7 @@ ucs_status_t uct_mm_iface_query(uct_iface_h tl_iface, uct_iface_attr_t *iface_at
                                           UCT_IFACE_FLAG_PENDING             |
                                           UCT_IFACE_FLAG_CB_SYNC             |
                                           UCT_IFACE_FLAG_CONNECT_TO_IFACE    |
-                                          iface->super.config.extra_cap_flags;
+                                          iface->config.extra_cap_flags;
 
     status = uct_mm_md_mapper_ops(md)->query(&attach_shm_file);
     ucs_assert_always(status == UCS_OK);
@@ -227,7 +227,7 @@ ucs_status_t uct_mm_iface_query(uct_iface_h tl_iface, uct_iface_attr_t *iface_at
                                           UCS_BIT(UCT_ATOMIC_OP_CSWAP);
 
     iface_attr->latency                 = UCT_MM_IFACE_LATENCY;
-    iface_attr->bandwidth.dedicated     = iface->super.super.config.bandwidth;
+    iface_attr->bandwidth.dedicated     = iface->super.config.bandwidth;
     iface_attr->bandwidth.shared        = 0;
     iface_attr->overhead                = UCT_MM_IFACE_OVERHEAD;
     iface_attr->priority                = 0;
@@ -280,7 +280,8 @@ uct_mm_iface_process_recv(uct_mm_base_iface_t *iface,
     data = elem->desc_data;
     VALGRIND_MAKE_MEM_DEFINED(data, elem->length);
     uct_mm_iface_trace_am(iface, UCT_AM_TRACE_TYPE_RECV, elem->flags,
-                          elem->am_id, data, elem->length, iface->recv_check.read_index);
+                          elem->am_id, data, elem->length,
+                          iface->recv_check.read_index);
 
     status = uct_mm_iface_invoke_am(iface, elem->am_id, data, elem->length,
                                     UCT_CB_PARAM_FLAG_DESC);
@@ -677,7 +678,8 @@ UCS_CLASS_INIT_FUNC(uct_mm_base_iface_t, uct_iface_ops_t *ops, uct_md_h md,
     UCS_CLASS_CALL_SUPER_INIT(uct_sm_iface_t, ops, &uct_mm_iface_internal_ops,
                               md, worker, params, tl_config);
 
-    if (ucs_derived_of(worker, uct_priv_worker_t)->thread_mode == UCS_THREAD_MODE_MULTI) {
+    if ((worker != NULL) &&
+        (ucs_derived_of(worker, uct_priv_worker_t)->thread_mode == UCS_THREAD_MODE_MULTI)) {
         ucs_error("Shared memory transport does not support multi-threaded worker");
         return UCS_ERR_INVALID_PARAM;
     }
@@ -726,6 +728,13 @@ UCS_CLASS_INIT_FUNC(uct_mm_base_iface_t, uct_iface_ops_t *ops, uct_md_h md,
                                       UCT_IFACE_PARAM_FIELD_RX_HEADROOM) ?
                                      params->rx_headroom : 0;
     self->release_desc.cb          = uct_mm_iface_release_desc;
+
+    ucs_arbiter_init(&self->arbiter);
+
+    /* For dummy collective transports - stop now */
+    if (!worker) {
+        return UCS_OK;
+    }
 
     /* Allocate the receive FIFO */
     status = uct_iface_mem_alloc(&self->super.super.super,
@@ -800,7 +809,6 @@ UCS_CLASS_INIT_FUNC(uct_mm_base_iface_t, uct_iface_ops_t *ops, uct_md_h md,
         }
     }
 
-    ucs_arbiter_init(&self->arbiter);
     uct_mm_iface_log_created(self);
 
     return UCS_OK;
@@ -823,6 +831,12 @@ static UCS_CLASS_CLEANUP_FUNC(uct_mm_base_iface_t)
     uct_base_iface_progress_disable(&self->super.super.super,
                                     UCT_PROGRESS_SEND | UCT_PROGRESS_RECV);
 
+    ucs_arbiter_cleanup(&self->arbiter);
+
+    if (!self->super.super.worker) {
+        return;
+    }
+
     /* return all the descriptors that are now 'assigned' to the FIFO,
      * to their mpool */
     uct_mm_iface_free_rx_descs(self, self->config.fifo_size);
@@ -831,7 +845,6 @@ static UCS_CLASS_CLEANUP_FUNC(uct_mm_base_iface_t)
     ucs_mpool_cleanup(&self->recv_desc_mp, 1);
     close(self->signal_fd);
     uct_iface_mem_free(&self->recv_fifo_mem);
-    ucs_arbiter_cleanup(&self->arbiter);
 }
 
 UCS_CLASS_INIT_FUNC(uct_mm_iface_t, uct_md_h md, uct_worker_h worker,
