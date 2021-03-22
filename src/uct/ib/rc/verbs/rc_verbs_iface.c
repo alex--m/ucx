@@ -69,8 +69,10 @@ uct_rc_verbs_update_tx_res(uct_rc_iface_t *iface, uct_rc_verbs_ep_t *ep,
 {
     ep->txcnt.ci += count;
     uct_rc_txqp_available_add(&ep->super.txqp, count);
+    UCT_BASE_EP_LOCK_IFACE(ep, iface);
     uct_rc_iface_update_reads(iface);
     uct_rc_iface_add_cq_credits(iface, count);
+    UCT_BASE_EP_UNLOCK_IFACE(ep, iface);
 }
 
 static void uct_rc_verbs_handle_failure(uct_ib_iface_t *ib_iface, void *arg,
@@ -179,6 +181,10 @@ uct_rc_verbs_iface_poll_tx(uct_rc_verbs_iface_t *iface)
                              NULL);
     }
 
+#if ENABLE_MT
+    ucs_recursive_spin_unlock(&iface->super.super.super.lock);
+#endif
+
     return num_wcs;
 }
 
@@ -228,7 +234,8 @@ uct_rc_verbs_iface_query(uct_iface_h tl_iface, uct_iface_attr_t *iface_attr)
         return status;
     }
 
-    iface_attr->cap.flags |= UCT_IFACE_FLAG_EP_CHECK;
+    iface_attr->cap.flags |= UCT_IFACE_FLAG_EP_CHECK |
+                             UCT_IFACE_FLAG_THREAD_SAFETY;
     iface_attr->latency.m += 1e-9;  /* 1 ns per each extra QP */
     iface_attr->overhead   = 75e-9; /* Software overhead */
 

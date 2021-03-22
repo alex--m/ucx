@@ -92,7 +92,12 @@ static inline ucs_status_t uct_tcp_ep_ctx_buf_alloc(uct_tcp_ep_t *ep,
 {
     ucs_assertv(ctx->buf == NULL, "tcp_ep=%p", ep);
 
+    UCT_BASE_EP_LOCK_IFACE(ep, ep->super.super.iface);
+
     ctx->buf = ucs_mpool_get_inline(mpool);
+
+    UCT_BASE_EP_UNLOCK_IFACE(ep, ep->super.super.iface);
+
     if (ucs_unlikely(ctx->buf == NULL)) {
         ucs_warn("tcp_ep %p: unable to get a buffer from %p memory pool", ep,
                  mpool);

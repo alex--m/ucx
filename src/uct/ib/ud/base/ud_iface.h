@@ -453,7 +453,7 @@ uct_ud_iface_check_grh(uct_ud_iface_t *iface, void *packet, int is_grh_present,
 
 
 static UCS_F_ALWAYS_INLINE void
-uct_ud_iface_twheel_sweep(uct_ud_iface_t *iface)
+uct_ud_iface_twheel_sweep(uct_ud_iface_t *iface, unsigned *needs_lock_p)
 {
     if (iface->tx.timer_sweep_count++ % UCT_UD_SKIP_SWEEP) {
         return;
@@ -463,14 +463,22 @@ uct_ud_iface_twheel_sweep(uct_ud_iface_t *iface)
         return;
     }
 
+#if ENABLE_MT
+    if (*needs_lock_p) {
+        UCT_BASE_IFACE_LOCK(iface);
+        *needs_lock_p = 0;
+    }
+#endif
+
     ucs_twheel_sweep(&iface->tx.timer, ucs_get_time());
 }
 
 
 static UCS_F_ALWAYS_INLINE void
-uct_ud_iface_progress_pending(uct_ud_iface_t *iface, const uintptr_t is_async)
+uct_ud_iface_progress_pending(uct_ud_iface_t *iface, const uintptr_t is_async,
+                              unsigned *needs_lock_p)
 {
-    uct_ud_iface_twheel_sweep(iface);
+    uct_ud_iface_twheel_sweep(iface, needs_lock_p);
 
     if (!is_async) {
         iface->tx.async_before_pending = 0;
@@ -479,6 +487,14 @@ uct_ud_iface_progress_pending(uct_ud_iface_t *iface, const uintptr_t is_async)
     if (!uct_ud_iface_can_tx(iface)) {
         return;
     }
+
+#if ENABLE_MT
+    if (*needs_lock_p) {
+        uct_ud_enter(iface);
+        UCT_BASE_IFACE_LOCK(iface);
+        *needs_lock_p = 0;
+    }
+#endif
 
     ucs_arbiter_dispatch(&iface->tx.pending_q, 1, uct_ud_ep_do_pending,
                          (void *)is_async);
@@ -545,22 +561,39 @@ uct_ud_iface_add_ctl_desc(uct_ud_iface_t *iface, uct_ud_ctl_desc_t *cdesc)
 
 
 static UCS_F_ALWAYS_INLINE unsigned
-uct_ud_iface_dispatch_pending_rx(uct_ud_iface_t *iface)
+uct_ud_iface_dispatch_pending_rx(uct_ud_iface_t *iface, unsigned *needs_lock_p)
 {
     if (ucs_likely(ucs_queue_is_empty(&iface->rx.pending_q))) {
         return 0;
     }
+
+#if ENABLE_MT
+    if (*needs_lock_p) {
+        uct_ud_enter(iface);
+        UCT_BASE_IFACE_LOCK(iface);
+        *needs_lock_p = 0;
+    }
+#endif
 
     return uct_ud_iface_dispatch_pending_rx_do(iface);
 }
 
 
 static UCS_F_ALWAYS_INLINE unsigned
-uct_ud_iface_dispatch_async_comps(uct_ud_iface_t *iface, uct_ud_ep_t *ep)
+uct_ud_iface_dispatch_async_comps(uct_ud_iface_t *iface, uct_ud_ep_t *ep,
+                                  unsigned *needs_lock_p)
 {
     if (ucs_likely(ucs_queue_is_empty(&iface->tx.async_comp_q))) {
         return 0;
     }
+
+#if ENABLE_MT
+    if (*needs_lock_p) {
+        uct_ud_enter(iface);
+        UCT_BASE_IFACE_LOCK(iface);
+        *needs_lock_p = 0;
+    }
+#endif
 
     return uct_ud_iface_dispatch_async_comps_do(iface, ep);
 }
