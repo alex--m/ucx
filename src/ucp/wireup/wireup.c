@@ -1582,8 +1582,7 @@ ucs_status_t ucp_wireup_init_lanes(ucp_ep_h ep, unsigned ep_init_flags,
     ucp_wireup_get_reachable_mds(ep, ep_init_flags, remote_address, &key);
 
     /* Load new configuration */
-    status = ucp_worker_get_ep_config(worker, &key, local_tl_bitmap,
-                                      iface_tl_base, ep_init_flags,
+    status = ucp_worker_get_ep_config(worker, &key, ep_init_flags,
                                       &new_cfg_index);
     if (status != UCS_OK) {
         goto out;

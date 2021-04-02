@@ -377,7 +377,7 @@ ucp_wireup_cm_ep_cleanup(ucp_ep_t *ucp_ep)
             continue;
         }
 
-        /* During discarding, UCT EP's pending queues 
+        /* During discarding, UCT EP's pending queues
          * are expected to be empty */
         ucp_worker_discard_uct_ep(
                 ucp_ep, ucp_ep_get_lane(ucp_ep, lane_idx),

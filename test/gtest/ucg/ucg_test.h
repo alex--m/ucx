@@ -9,16 +9,33 @@
 
 #define __STDC_LIMIT_MACROS
 
+#if _OPENMP
+#include "omp.h"
+#if ENABLE_MT
+#define MT_TEST_NUM_THREADS omp_get_max_threads()
+#else
+#define MT_TEST_NUM_THREADS 4
+#endif
+#endif
+
+#include <common/test.h>
+#include <vector>
+#include <memory>
+#include "ucg/builtin/plan/builtin_plan.h"
+#include "ucg/builtin/ops/builtin_ops.h"
+#include "ucg/base/ucg_group.h"
+#include "ucg/api/ucg_plan_component.h"
+#include "ucg/api/ucg.h"
+
 #include <common/test.h>
 
 #if _OPENMP
 #include "omp.h"
 #endif
 
-#if _OPENMP && ENABLE_MT
-#define MT_TEST_NUM_THREADS omp_get_max_threads()
-#else
-#define MT_TEST_NUM_THREADS 4
+/* UCG version compile time test */
+#if (UCG_API_VERSION != UCG_VERSION(UCG_API_MAJOR,UCG_API_MINOR))
+#error possible bug in UCG version
 #endif
 
 extern "C" {
@@ -29,6 +46,87 @@ extern "C" {
 #if (UCG_API_VERSION != UCG_VERSION(UCG_API_MAJOR,UCG_API_MINOR))
 #error possible bug in UCG version
 #endif
+
+struct ucg_test_param {
+    struct {
+        ucp_params_t          ucp;
+        ucg_params_t          ucg;
+    } ctx_params;
+
+    std::vector<std::string>  planners;
+
+    int                       thread_type;
+    ucg_group_member_index_t  group_size;
+    int                       variant;
+};
+
+typedef struct ucg_request {
+    uintptr_t    is_complete;
+    ucs_status_t status;
+} ucg_request_t;
+
+class ucg_test; // forward declaration
+
+template <typename T>
+class commmunicator_storage : public ucs::entities_storage<T> {
+public:
+    const ucs::ptr_vector<T>& comm() const {
+        return m_comm;
+    }
+
+    T& get_rank(size_t idx) {
+        return m_comm.at(idx);
+    }
+
+    ucs::ptr_vector<T> m_comm;
+};
+
+class ucg_test_base : public ucs::test_base {
+public:
+    enum {
+        SINGLE_THREAD = 7,
+        MULTI_THREAD_CONTEXT, /* workers are single-threaded, context is mt-shared */
+        MULTI_THREAD_WORKER   /* workers are multi-threaded, cotnext is mt-single */
+    };
+
+    class rank {
+        typedef std::vector<ucs::handle<ucg_group_h, rank*>> group_vec_t;
+
+    public:
+
+        rank(const ucg_test_param& test_param, ucg_config_t* ucg_config,
+             const ucp_worker_params_t& worker_params,
+             const ucg_test_base* test_owner);
+
+        ~rank();
+
+        void groupify(const ucs::ptr_vector<rank>& ranks,
+                      const ucg_group_params_t& group_params,
+                      int group_idx = 0, int do_set_group = 1);
+
+        ucg_group_h group(int group_index = 0) const;
+
+        ucp_worker_h worker() const;
+
+        ucg_context_h ucgh() const;
+
+        int get_num_groups() const;
+
+        unsigned worker_progress();
+
+        void warn_existing_groups() const;
+
+    protected:
+        ucs::handle<ucg_context_h>      m_ucgh;
+        ucs::handle<ucp_worker_h>       m_worker;
+        group_vec_t                     m_groups;
+
+    private:
+        void set_group(ucg_group_h group, int group_index);
+    };
+
+    static bool is_request_completed(ucg_request_t *req);
+};
 
 struct ucg_test_param {
     struct {
@@ -174,6 +272,47 @@ protected:
     void set_ucg_config(ucg_config_t *config);
 };
 
+class test_ucg_group_base : public ucg_test {
+public:
+    test_ucg_group_base(unsigned nodes, unsigned ppn,
+                        ucg_group_member_index_t my_rank);
+    virtual ~test_ucg_group_base();
+    virtual void create_comms(ucg_group_member_index_t group_size);
+
+protected:
+    ucp_worker_h       m_worker;
+    ucg_group_h        m_group; /* group object for my rank */
+    ucg_group_params_t m_group_params;
+};
+
+class test_ucg_coll_base : public test_ucg_group_base {
+public:
+    test_ucg_coll_base(unsigned nodes, unsigned ppn,
+                       ucg_group_member_index_t my_rank,
+                       const ucg_collective_params_t *coll_params);
+    virtual ~test_ucg_coll_base();
+
+    virtual ucs_status_t create();
+    virtual ucs_status_t start(ucg_request_t *req);
+    virtual ucg_collective_progress_t get_progress();
+    virtual ucs_status_t cancel();
+    virtual void destroy();
+
+    virtual void once() {
+        ucg_request_t req;
+
+        ASSERT_UCS_OK(create());
+        ASSERT_UCS_OK_OR_INPROGRESS(start(&req));
+        ASSERT_UCS_OK(request_wait(&req));
+
+        destroy();
+    }
+
+protected:
+    ucg_op_t          *m_op;
+    ucg_plan_t        *m_plan;
+    ucg_group_params_t m_coll_params;
+};
 
 std::ostream& operator<<(std::ostream& os, const ucg_test_param& test_param);
 
@@ -200,6 +339,5 @@ std::ostream& operator<<(std::ostream& os, const ucg_test_param& test_param);
  */
 #define UCG_INSTANTIATE_TEST_CASE(_test_case) \
     UCG_INSTANTIATE_TEST_CASE_PLANNERS(_test_case, builtin, "builtin")
-
 
 #endif

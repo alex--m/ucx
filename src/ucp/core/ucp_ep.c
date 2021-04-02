@@ -792,7 +792,7 @@ ucs_status_t ucp_ep_init_create_wireup(ucp_ep_h ep, unsigned ep_init_flags,
         key.wireup_msg_lane = 0;
     }
 
-    status = ucp_worker_get_ep_config(ep->worker, &key, NULL, 0, ep_init_flags,
+    status = ucp_worker_get_ep_config(ep->worker, &key, ep_init_flags,
                                       &ep->cfg_index);
     if (status != UCS_OK) {
         return status;
