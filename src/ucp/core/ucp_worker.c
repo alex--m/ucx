@@ -974,7 +974,6 @@ ucs_status_t ucp_worker_add_resource_ifaces(ucp_worker_h worker,
         iface_id            =
         *iface_index_base_p = worker->num_ifaces;
         worker->num_ifaces += num_ifaces;
-        num_ifaces          = iface_id;
     } else {
         worker->num_ifaces  = num_ifaces;
         worker->ifaces      = NULL;
@@ -989,7 +988,9 @@ ucs_status_t ucp_worker_add_resource_ifaces(ucp_worker_h worker,
         goto err;
     }
 
-    memset(&worker->ifaces[iface_id], 0, num_ifaces * sizeof(*worker->ifaces));
+    memset(worker->ifaces + iface_id, 0, num_ifaces * sizeof(*worker->ifaces));
+
+    num_ifaces = iface_id;
 
     UCS_BITMAP_FOR_EACH_BIT(tl_bitmap, tl_id) {
         if (coll_params) {
@@ -1080,12 +1081,10 @@ ucs_status_t ucp_worker_add_resource_ifaces(ucp_worker_h worker,
                                      "ucp ifaces array");
 
         ucs_assert(worker->ifaces != NULL); /* shrinking should always work */
-
-        iface_id = num_ifaces;
-    } else {
-        iface_id = 0;
+        ucs_assert(UCS_BITMAP_POPCOUNT(tl_bitmap) == (iface_id - num_ifaces));
     }
 
+    iface_id = num_ifaces;
     UCS_BITMAP_FOR_EACH_BIT(tl_bitmap, tl_id) {
         status = ucp_worker_iface_init(worker, tl_id,
                                        worker->ifaces[iface_id++]);
@@ -1821,9 +1820,7 @@ static void ucp_worker_destroy_mpools(ucp_worker_h worker)
  */
 ucs_status_t
 ucp_worker_get_ep_config(ucp_worker_h worker, const ucp_ep_config_key_t *key,
-                         const ucp_tl_bitmap_t *local_tl_bitmap,
-                         unsigned iface_tl_base, int print_cfg,
-                         ucp_worker_cfg_index_t *cfg_index_p)
+                         int print_cfg, ucp_worker_cfg_index_t *cfg_index_p)
 {
     ucp_context_h context = worker->context;
     ucp_worker_cfg_index_t ep_cfg_index;

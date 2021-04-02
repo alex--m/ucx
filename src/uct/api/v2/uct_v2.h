@@ -112,7 +112,7 @@ typedef struct {
     ucs_memory_type_t   remote_memory_type;
 
     /**
-     * Message overhead time, in seconds. This field is set by the UCT layer.
+     * Message overhead time, in seconds. These fields are set by the UCT layer.
      */
     double              overhead;
 
