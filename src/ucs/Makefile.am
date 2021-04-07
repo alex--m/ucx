@@ -123,7 +123,8 @@ noinst_HEADERS = \
 	async/pipe.h \
 	async/signal.h \
 	async/thread.h \
-	async/async_int.h
+	async/async_int.h \
+	counters/ethtool_ctrs.h
 
 libucs_la_SOURCES = \
 	algorithm/crc.c \
@@ -185,7 +186,9 @@ libucs_la_SOURCES = \
 	type/spinlock.c \
 	type/thread_mode.c \
 	vfs/base/vfs_obj.c \
-	vfs/base/vfs_cb.c
+	vfs/base/vfs_cb.c \
+	counters/ethtool_ctrs.c
+
 
 if HAVE_AARCH64_THUNDERX2
 libucs_la_SOURCES += \
