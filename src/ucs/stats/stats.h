@@ -1,5 +1,6 @@
 /**
 * Copyright (C) Mellanox Technologies Ltd. 2001-2013.  ALL RIGHTS RESERVED.
+* Copyright (C) Huawei Technologies Co., Ltd. 2021.  ALL RIGHTS RESERVED.
 *
 * See file LICENSE for terms.
 */
@@ -53,24 +54,28 @@ void ucs_stats_node_free(ucs_stats_node_t *node);
 #define UCS_STATS_NODE_FREE(_node) \
     ucs_stats_node_free(_node)
 
+#define UCS_STATS_COUNTER(_node, _index) \
+    __ucs_ptr_array_lookup_no_check(&ucs_stats_context.counters, \
+                                    (_node)->base_counter_index + (_index))
+
 #define UCS_STATS_UPDATE_COUNTER(_node, _index, _delta) \
-    if (((_delta) != 0) && ((_node) != NULL)) { \
-        (_node)->counters[(_index)] += (uint64_t)(_delta); \
+    if (ucs_likely(((_delta) != 0) && ((_node) != NULL))) { \
+        UCS_STATS_COUNTER(_node, _index) += ucs_ptr_array_shift(_delta); \
     }
 
 #define UCS_STATS_SET_COUNTER(_node, _index, _value) \
-    if ((_node) != NULL) { \
-        (_node)->counters[(_index)] = (_value); \
+    if (ucs_likely((_node) != NULL)) { \
+        UCS_STATS_COUNTER(_node, _index) = ucs_ptr_array_shift(_value); \
     }
 
 #define UCS_STATS_GET_COUNTER(_node, _index) \
-    (((_node) != NULL) ?  \
-    (_node)->counters[(_index)] : 0)
+    (ucs_likely((_node) != NULL) ?  \
+    ucs_ptr_array_unshift(UCS_STATS_COUNTER(_node, _index)) : 0)
 
 #define UCS_STATS_UPDATE_MAX(_node, _index, _value) \
-    if ((_node) != NULL) { \
-        if ((_node)->counters[(_index)] < (_value)) { \
-            (_node)->counters[(_index)] = (_value); \
+    if (ucs_likely((_node) != NULL)) { \
+        if (UCS_STATS_COUNTER(_node, _index) < ucs_ptr_array_shift(_value)) { \
+            UCS_STATS_COUNTER(_node, _index) = ucs_ptr_array_shift(_value); \
         } \
     }
 

@@ -2,6 +2,7 @@
 * Copyright (C) Mellanox Technologies Ltd. 2001-2013.  ALL RIGHTS RESERVED.
 * Copyright (C) The University of Tennessee and The University
 *               of Tennessee Research Foundation. 2020. ALL RIGHTS RESERVED.
+* Copyright (C) Huawei Technologies Co., Ltd. 2021.  ALL RIGHTS RESERVED.
 *
 * See file LICENSE for terms.
 */
@@ -14,16 +15,19 @@
 
 #include <ucs/debug/log.h>
 #include <ucs/time/time.h>
+#include <ucs/datastruct/mpool.inl>
 #include <ucs/config/global_opts.h>
 #include <ucs/config/parser.h>
 #include <ucs/type/status.h>
 #include <ucs/sys/sys.h>
-#include <ucs/datastruct/khash.h>
 
 #include <sys/ioctl.h>
 #ifdef HAVE_LINUX_FUTEX_H
 #include <linux/futex.h>
 #endif
+
+#define UCS_STATS_TYPICAL_FNODE_CNT (10)
+#define UCS_STATS_TYPICAL_SNODE_CNT (10)
 
 const char *ucs_stats_formats_names[] = {
     [UCS_STATS_FULL]        = "full",
@@ -43,6 +47,8 @@ enum {
     UCS_STATS_FLAG_STREAM         = UCS_BIT(9),
     UCS_STATS_FLAG_STREAM_CLOSE   = UCS_BIT(10),
     UCS_STATS_FLAG_STREAM_BINARY  = UCS_BIT(11),
+
+    UCS_STATS_FLAG_MPOOL_INITED   = UCS_BIT(15)
 };
 
 enum {
@@ -50,36 +56,7 @@ enum {
     UCS_ROOT_STATS_LAST
 };
 
-KHASH_MAP_INIT_STR(ucs_stats_cls, ucs_stats_class_t*)
-
-typedef struct {
-    volatile unsigned    flags;
-
-    ucs_time_t           start_time;
-    ucs_stats_filter_node_t  root_filter_node;
-    ucs_stats_node_t     root_node;
-    ucs_stats_counter_t  root_counters[UCS_ROOT_STATS_LAST];
-
-    union {
-        FILE             *stream;         /* Output stream */
-        ucs_stats_client_h client;       /* UDP client */
-    };
-
-    union {
-        int              signo;
-        double           interval;
-    };
-
-    khash_t(ucs_stats_cls) cls;
-
-    pthread_mutex_t      lock;
-#ifndef HAVE_LINUX_FUTEX_H
-    pthread_cond_t       cv;
-#endif
-    pthread_t            thread;
-} ucs_stats_context_t;
-
-static ucs_stats_context_t ucs_stats_context = {
+ucs_stats_context_t ucs_stats_context = {
     .flags            = 0,
     .root_node        = {},
     .root_filter_node = {},
@@ -98,6 +75,8 @@ static ucs_stats_class_t ucs_stats_root_node_class = {
     }
 };
 
+KHASH_IMPL(ucs_stats_cls, kh_cstr_t, ucs_stats_class_t*, 1, kh_str_hash_func,
+           kh_str_hash_equal)
 
 #ifdef HAVE_LINUX_FUTEX_H
 static inline int
@@ -222,18 +201,18 @@ static void ucs_stats_node_remove(ucs_stats_node_t *node, int make_inactive)
             make_inactive = 0;
         }
     } else {
-        ucs_stats_clean_node(node); 
+        ucs_stats_clean_node(node);
     }
-
-    pthread_mutex_unlock(&ucs_stats_context.lock);
 
     if (!make_inactive) {
         if (!node->filter_node->type_list_len) {
-            ucs_free(node->filter_node);
+            ucs_mpool_put_inline(node->filter_node);
         }
-        ucs_free(node);
+        ucs_mpool_put_inline(node);
     }
-}   
+
+    pthread_mutex_unlock(&ucs_stats_context.lock);
+}
 
 static void ucs_stats_filter_node_init_root() {
     ucs_list_head_init(&ucs_stats_context.root_filter_node.list);
@@ -264,22 +243,22 @@ static void ucs_stats_node_init_root(const char *name, ...)
 
     ucs_stats_context.root_node.parent = NULL;
     ucs_stats_context.root_node.filter_node = &ucs_stats_context.root_filter_node;
+    ucs_stats_context.root_node.base_counter_index = ucs_ptr_array_alloc(
+            &ucs_stats_context.counters, UCS_ROOT_STATS_LAST);
 
     ucs_stats_filter_node_init_root();
 }
 
 static ucs_status_t ucs_stats_node_new(ucs_stats_class_t *cls, ucs_stats_node_t **p_node)
 {
-    ucs_stats_node_t *node;
-
-    node = ucs_malloc(sizeof(ucs_stats_node_t) +
-                      sizeof(ucs_stats_counter_t) *
-                      (cls->num_counters > 0 ? cls->num_counters - 1 : 0),
-                      "stats node");
+    ucs_stats_node_t *node = ucs_mpool_get_inline(&ucs_stats_context.snode_mp);
     if (node == NULL) {
         ucs_error("Failed to allocate stats node for %s", cls->name);
         return UCS_ERR_NO_MEMORY;
     }
+
+    node->base_counter_index = ucs_ptr_array_alloc(&ucs_stats_context.counters,
+                                                   cls->num_counters);
 
     *p_node = node;
     return UCS_OK;
@@ -287,10 +266,8 @@ static ucs_status_t ucs_stats_node_new(ucs_stats_class_t *cls, ucs_stats_node_t 
 
 static ucs_status_t ucs_stats_filter_node_new(ucs_stats_class_t *cls, ucs_stats_filter_node_t **p_node)
 {
-    ucs_stats_filter_node_t *node;
-
-    node = ucs_malloc(sizeof(ucs_stats_filter_node_t),
-                      "stats filter node");
+    ucs_stats_filter_node_t *node = ucs_mpool_get_inline(
+            &ucs_stats_context.fnode_mp);
     if (node == NULL) {
         ucs_error("Failed to allocate stats filter node for %s", cls->name);
         return UCS_ERR_NO_MEMORY;
@@ -384,12 +361,9 @@ static ucs_status_t ucs_stats_node_add(ucs_stats_node_t *node,
     }
 
     /* Append node to existing tree */
-    pthread_mutex_lock(&ucs_stats_context.lock);
     ucs_list_add_tail(&parent->children[UCS_STATS_ACTIVE_CHILDREN], &node->list);
     node->parent = parent;
     ucs_stats_add_to_filter(node, filter_node);
-
-    pthread_mutex_unlock(&ucs_stats_context.lock);
 
     return UCS_OK;
 }
@@ -407,9 +381,11 @@ ucs_status_t ucs_stats_node_alloc(ucs_stats_node_t** p_node, ucs_stats_class_t *
         return UCS_OK;
     }
 
+    pthread_mutex_lock(&ucs_stats_context.lock);
+
     status = ucs_stats_node_new(cls, &node);
     if (status != UCS_OK) {
-        return status;
+        goto alloc_end;
     }
 
     va_start(ap, name);
@@ -417,31 +393,38 @@ ucs_status_t ucs_stats_node_alloc(ucs_stats_node_t** p_node, ucs_stats_class_t *
     va_end(ap);
 
     if (status != UCS_OK) {
-        ucs_free(node);
-        return status;
+        goto init_failed;
     }
 
     status = ucs_stats_filter_node_new(node->cls, &filter_node);
     if (status != UCS_OK) {
-        ucs_free(node);
-        return status;
+        goto init_failed;
     }
 
     ucs_trace("allocated stats node '"UCS_STATS_NODE_FMT"'", UCS_STATS_NODE_ARG(node));
 
     status = ucs_stats_node_add(node, parent, filter_node);
     if (status != UCS_OK) {
-        ucs_free(node);
-        ucs_free(filter_node);
-        return status;
+        ucs_mpool_put_inline(filter_node);
+        goto init_failed;
     }
 
     if (node->filter_node != filter_node) {
-        ucs_free(filter_node);
+        ucs_mpool_put_inline(filter_node);
     }
 
+
     *p_node = node;
-    return UCS_OK;
+    status  = UCS_OK;
+    goto alloc_end;
+
+init_failed:
+    ucs_mpool_put_inline(node);
+
+alloc_end:
+    pthread_mutex_unlock(&ucs_stats_context.lock);
+
+    return status;
 }
 
 void ucs_stats_node_free(ucs_stats_node_t *node)
@@ -703,9 +686,42 @@ static void ucs_stats_clean_node_recurs(ucs_stats_node_t *node)
     }
 }
 
+static ucs_mpool_ops_t ucs_stats_mpool_ops = {
+    .chunk_alloc   = ucs_mpool_chunk_malloc,
+    .chunk_release = ucs_mpool_chunk_free,
+    .obj_init      = NULL,
+    .obj_cleanup   = NULL
+};
+
 void ucs_stats_init()
 {
+    ucs_status_t status;
+
     ucs_assert(ucs_stats_context.flags == 0);
+
+    status = ucs_mpool_init(&ucs_stats_context.fnode_mp, 0,
+                            sizeof(struct ucs_stats_filter_node), 0,
+                            UCS_SYS_CACHE_LINE_SIZE,
+                            UCS_STATS_TYPICAL_FNODE_CNT, UINT_MAX,
+                            &ucs_stats_mpool_ops, "ucs_stats_filter_nodes");
+    if (status != UCS_OK) {
+        return;
+    }
+
+    status = ucs_mpool_init(&ucs_stats_context.snode_mp, 0,
+                            sizeof(struct ucs_stats_node), 0,
+                            UCS_SYS_CACHE_LINE_SIZE,
+                            UCS_STATS_TYPICAL_FNODE_CNT, UINT_MAX,
+                            &ucs_stats_mpool_ops, "ucs_stats_nodes");
+    if (status != UCS_OK) {
+        ucs_mpool_cleanup(&ucs_stats_context.fnode_mp, 0);
+        return;
+    }
+
+    ucs_ptr_array_init(&ucs_stats_context.counters, "ucs_stats_counters");
+
+    ucs_stats_context.flags = UCS_STATS_FLAG_MPOOL_INITED;
+
     ucs_stats_open_dest();
 
     if (!ucs_stats_is_active()) {
@@ -713,39 +729,46 @@ void ucs_stats_init()
         return;
     }
 
+
     UCS_STATS_START_TIME(ucs_stats_context.start_time);
     ucs_stats_node_init_root("%s:%d", ucs_get_host_name(), getpid());
     ucs_stats_set_trigger();
     kh_init_inplace(ucs_stats_cls, &ucs_stats_context.cls);
 
-    ucs_debug("statistics enabled, flags: %c%c%c%c%c%c%c",
+    ucs_debug("statistics enabled, flags: %c%c%c%c%c%c%c%c",
               (ucs_stats_context.flags & UCS_STATS_FLAG_ON_TIMER)      ? 't' : '-',
               (ucs_stats_context.flags & UCS_STATS_FLAG_ON_EXIT)       ? 'e' : '-',
               (ucs_stats_context.flags & UCS_STATS_FLAG_ON_SIGNAL)     ? 's' : '-',
               (ucs_stats_context.flags & UCS_STATS_FLAG_SOCKET)        ? 'u' : '-',
               (ucs_stats_context.flags & UCS_STATS_FLAG_STREAM)        ? 'f' : '-',
               (ucs_stats_context.flags & UCS_STATS_FLAG_STREAM_BINARY) ? 'b' : '-',
-              (ucs_stats_context.flags & UCS_STATS_FLAG_STREAM_CLOSE)  ? 'c' : '-');
+              (ucs_stats_context.flags & UCS_STATS_FLAG_STREAM_CLOSE)  ? 'c' : '-',
+              (ucs_stats_context.flags & UCS_STATS_FLAG_MPOOL_INITED)  ? 'm' : '-');
 }
 
 void ucs_stats_cleanup()
 {
     ucs_stats_class_t *cls;
 
-    if (!ucs_stats_is_active()) {
-        return;
+    if (ucs_stats_is_active()) {
+        ucs_stats_unset_trigger();
+        ucs_stats_clean_node_recurs(&ucs_stats_context.root_node);
+        ucs_stats_close_dest();
+
+        kh_foreach_value(&ucs_stats_context.cls, cls, {
+            ucs_stats_free_class(cls);
+        });
+
+        kh_destroy_inplace(ucs_stats_cls, &ucs_stats_context.cls);
     }
 
-    ucs_stats_unset_trigger();
-    ucs_stats_clean_node_recurs(&ucs_stats_context.root_node);
-    ucs_stats_close_dest();
-    ucs_assert(ucs_stats_context.flags == 0);
+    if (ucs_stats_context.flags & UCS_STATS_FLAG_MPOOL_INITED) {
+        ucs_mpool_cleanup(&ucs_stats_context.fnode_mp, 1);
+        ucs_mpool_cleanup(&ucs_stats_context.snode_mp, 1);
+        ucs_ptr_array_cleanup(&ucs_stats_context.counters, 0);
+    }
 
-    kh_foreach_value(&ucs_stats_context.cls, cls, {
-        ucs_stats_free_class(cls);
-    });
-
-    kh_destroy_inplace(ucs_stats_cls, &ucs_stats_context.cls);
+    ucs_stats_context.flags = 0;
 }
 
 void ucs_stats_dump()

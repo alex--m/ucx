@@ -45,6 +45,7 @@ typedef struct ucs_memtrack_entry {
 #define UCS_MEMTRACK_ARG        , const char* alloc_name
 #define UCS_MEMTRACK_VAL        , alloc_name
 #define UCS_MEMTRACK_VAL_ALWAYS alloc_name
+#define UCS_MEMTRACK_NAME_REUSE (NULL)
 #define UCS_MEMTRACK_NAME(_n)   , _n
 
 
@@ -85,14 +86,14 @@ void ucs_memtrack_total(ucs_memtrack_entry_t* total);
 /**
  * Track custom allocation. Need to be called after custom allocation returns.
  */
-void ucs_memtrack_allocated(void *ptr, size_t size, const char *name);
+void ucs_memtrack_allocated(const void *ptr, size_t size, const char *name);
 
 
 /**
  * Track release of custom allocation. Need to be called before actually
  * releasing the memory.
  */
-void ucs_memtrack_releasing(void *ptr);
+void ucs_memtrack_releasing(const void *ptr, const char **entry_name_p);
 
 
 /*
@@ -125,7 +126,7 @@ char *ucs_strndup(const char *src, size_t n, const char *name);
 #define ucs_memtrack_total(_total)                 ucs_memtrack_total_init(_total)
 
 #define ucs_memtrack_allocated(_ptr, _sz, ...)     UCS_EMPTY_STATEMENT
-#define ucs_memtrack_releasing(_ptr)               UCS_EMPTY_STATEMENT
+#define ucs_memtrack_releasing(_ptr, _name)        UCS_EMPTY_STATEMENT
 
 #define ucs_malloc(_s, ...)                        malloc(_s)
 #define ucs_calloc(_n, _s, ...)                    calloc(_n, _s)
@@ -141,12 +142,13 @@ char *ucs_strndup(const char *src, size_t n, const char *name);
 
 #endif /* ENABLE_MEMTRACK */
 
-END_C_DECLS
-
 /*
  * The functions below have no native implementation, they apply to both cases.
  */
+
 int ucs_posix_memalign_realloc(void **ptr, size_t boundary, size_t size,
                                const char *name);
+
+END_C_DECLS
 
 #endif

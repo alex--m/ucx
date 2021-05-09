@@ -934,7 +934,7 @@ ucs_status_t ucs_sysv_free(void *address)
 {
     int ret;
 
-    ucs_memtrack_releasing(address);
+    ucs_memtrack_releasing(address, NULL);
     ret = shmdt(address);
     if (ret) {
         ucs_warn("Unable to detach shared memory segment at %p: %m", address);

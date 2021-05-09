@@ -172,7 +172,7 @@ static void ucs_memtrack_generate_report()
     }
 }
 
-void ucs_memtrack_allocated(void *ptr, size_t size, const char *name)
+void ucs_memtrack_allocated(const void *ptr, size_t size, const char *name)
 {
     ucs_memtrack_entry_t *entry;
     khiter_t iter;
@@ -224,8 +224,9 @@ out_unlock:
     pthread_mutex_unlock(&ucs_memtrack_context.lock);
 }
 
-void ucs_memtrack_releasing(void* ptr)
+void ucs_memtrack_releasing(const void *ptr, const char **entry_name_p)
 {
+    int new_str = 0;
     ucs_memtrack_entry_t *entry;
     khiter_t iter;
     size_t size;
@@ -251,29 +252,52 @@ void ucs_memtrack_releasing(void* ptr)
     ucs_memtrack_entry_update(entry, -size);
     ucs_memtrack_entry_update(&ucs_memtrack_context.total, -size);
 
+    if (entry_name_p != NULL) {
+        *entry_name_p = strdup(entry->name);
+        new_str       = 1;
+    }
+
 out_unlock:
     pthread_mutex_unlock(&ucs_memtrack_context.lock);
+
+    if (new_str) {
+        ucs_memtrack_allocated(*entry_name_p, strlen(*entry_name_p) + 1,
+                               *entry_name_p);
+    }
 }
 
 void *ucs_malloc(size_t size, const char *name)
 {
     void *ptr = malloc(size);
-    ucs_memtrack_allocated(ptr, size, name);
+    ucs_memtrack_allocated((const void*)ptr, size, name);
     return ptr;
 }
 
 void *ucs_calloc(size_t nmemb, size_t size, const char *name)
 {
     void *ptr = calloc(nmemb, size);
-    ucs_memtrack_allocated(ptr, nmemb * size, name);
+    ucs_memtrack_allocated((const void*)ptr, nmemb * size, name);
     return ptr;
 }
 
 void *ucs_realloc(void *ptr, size_t size, const char *name)
 {
-    ucs_memtrack_releasing(ptr);
+    const char **name_p, *realloc_name = name;
+
+    if (name == UCS_MEMTRACK_NAME_REUSE) {
+        name_p = &realloc_name;
+    } else {
+        name_p = NULL;
+    }
+
+    ucs_memtrack_releasing((const void*)ptr, name_p);
     ptr = realloc(ptr, size);
-    ucs_memtrack_allocated(ptr, size, name);
+    ucs_memtrack_allocated((const void*)ptr, size, realloc_name);
+
+    if (name == UCS_MEMTRACK_NAME_REUSE) {
+        ucs_free((void*)realloc_name);
+    }
+
     return ptr;
 }
 
@@ -294,7 +318,7 @@ int ucs_posix_memalign(void **ptr, size_t boundary, size_t size, const char *nam
 
 void ucs_free(void *ptr)
 {
-    ucs_memtrack_releasing(ptr);
+    ucs_memtrack_releasing(ptr, NULL);
     free(ptr);
 }
 
@@ -310,7 +334,7 @@ void *ucs_mmap(void *addr, size_t length, int prot, int flags, int fd,
 
 int ucs_munmap(void *addr, size_t length)
 {
-    ucs_memtrack_releasing(addr);
+    ucs_memtrack_releasing(addr, NULL);
     return munmap(addr, length);
 }
 
