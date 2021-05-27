@@ -24,7 +24,6 @@
 #define UCT_PENDING_REQ_PRIV_LEN   40
 #define UCT_TAG_PRIV_LEN           32
 #define UCT_AM_ID_BITS             5
-#define UCT_AM_ID_DISCARD          UCS_MASK(UCT_AM_ID_BITS)
 #define UCT_AM_ID_MAX              UCS_BIT(UCT_AM_ID_BITS)
 #define UCT_MEM_HANDLE_NULL        NULL
 #define UCT_INVALID_RKEY           ((uintptr_t)(-1))

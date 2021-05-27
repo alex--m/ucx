@@ -184,6 +184,7 @@ typedef enum {
                                           with a generic datatype */
     UCP_AM_ID_RNDV_DATA         =  12, /* Rndv data fragments when using software
                                           rndv (bcopy) */
+    UCP_AM_ID_PAGG              =  13, /* Packet aggregation */
     UCP_AM_ID_OFFLOAD_SYNC_ACK  =  14, /* Eager sync ack for tag offload proto */
 
     UCP_AM_ID_STREAM_DATA       =  15, /* Eager STREAM packet */
@@ -203,7 +204,6 @@ typedef enum {
     UCP_AM_ID_AM_SINGLE_REPLY   =  26, /* Single fragment user defined AM
                                           carrying remote ep for reply */
     UCP_AM_ID_LAST,
-    UCP_AM_ID_DISCARD           =  UCT_AM_ID_DISCARD, /* Discard such messages */
     UCP_AM_ID_MAX               =  UCT_AM_ID_MAX  /* Total IDs available */
 } ucp_am_id_t;
 
