@@ -212,7 +212,7 @@ struct ucp_request {
 
                 struct {
                     uint64_t   remote_addr; /* Remote address */
-                    ucp_rkey_h rkey; /* Remote memory key */
+                    ucp_rkey_h rkey;        /* Remote memory key */
                 } rma;
 
                 struct {
@@ -350,6 +350,10 @@ struct ucp_request {
                     uint64_t              result;      /* Atomic result */
                     void                  *reply_buffer;
                     uct_atomic_op_t       uct_op;      /* Requested UCT AMO */
+                    struct {
+                        ucp_rkey_h        rkey;        /* Remote data key */
+                        const void        *buffer;     /* Local buffer sent */
+                    } append;
                 } amo;
 
                 struct {

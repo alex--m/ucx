@@ -19,41 +19,6 @@
 #include <ucp/proto/proto_common.inl>
 
 
-#define UCP_RMA_CHECK_BUFFER(_buffer, _action) \
-    do { \
-        if (ENABLE_PARAMS_CHECK && ucs_unlikely((_buffer) == NULL)) { \
-            _action; \
-        } \
-    } while (0)
-
-
-#define UCP_RMA_CHECK_ZERO_LENGTH(_length, _action) \
-    do { \
-        if ((_length) == 0) { \
-            _action; \
-        } \
-    } while (0)
-
-
-#define UCP_RMA_CHECK(_context, _buffer, _length) \
-    do { \
-        UCP_CONTEXT_CHECK_FEATURE_FLAGS(_context, UCP_FEATURE_RMA, \
-                                        return UCS_ERR_INVALID_PARAM); \
-        UCP_RMA_CHECK_ZERO_LENGTH(_length, return UCS_OK); \
-        UCP_RMA_CHECK_BUFFER(_buffer, return UCS_ERR_INVALID_PARAM); \
-    } while (0)
-
-
-#define UCP_RMA_CHECK_PTR(_context, _buffer, _length) \
-    do { \
-        UCP_CONTEXT_CHECK_FEATURE_FLAGS(_context, UCP_FEATURE_RMA, \
-                                        return UCS_STATUS_PTR(UCS_ERR_INVALID_PARAM)); \
-        UCP_RMA_CHECK_ZERO_LENGTH(_length, return NULL); \
-        UCP_RMA_CHECK_BUFFER(_buffer, \
-                             return UCS_STATUS_PTR(UCS_ERR_INVALID_PARAM)); \
-    } while (0)
-
-
 /* request can be released if
  *  - all fragments were sent (length == 0) (bcopy & zcopy mix)
  *  - all zcopy fragments are done (uct_comp.count == 0)
@@ -239,18 +204,17 @@ ucp_put_send_short(ucp_ep_h ep, const void *buffer, size_t length,
                             buffer, length, remote_addr, tl_rkey);
 }
 
+static UCS_F_ALWAYS_INLINE ucs_status_ptr_t
+ucp_put_common(ucp_ep_h ep, ucp_worker_h worker, const void *buffer,
+               size_t count, uint64_t remote_addr, ucp_rkey_h rkey,
+               const ucp_request_param_t *param);
+
 ucs_status_ptr_t ucp_put_nbx(ucp_ep_h ep, const void *buffer, size_t count,
                              uint64_t remote_addr, ucp_rkey_h rkey,
                              const ucp_request_param_t *param)
 {
-    ucp_worker_h worker     = ep->worker;
-    size_t contig_length    = 0;
-    ucp_datatype_t datatype = ucp_dt_make_contig(1);
-    ucp_ep_rma_config_t *rma_config;
+    ucp_worker_h worker = ep->worker;
     ucs_status_ptr_t ret;
-    ucs_status_t status;
-    ucp_request_t *req;
-    uint32_t attr_mask;
 
     UCP_REQUEST_CHECK_PARAM(param);
     UCP_RMA_CHECK_PTR(worker->context, buffer, count);
@@ -261,19 +225,36 @@ ucs_status_ptr_t ucp_put_nbx(ucp_ep_h ep, const void *buffer, size_t count,
                   buffer, count, remote_addr, rkey, ucp_ep_peer_name(ep),
                   ucp_request_param_send_callback(param));
 
+    ret = ucp_put_common(ep, worker, buffer, count, remote_addr, rkey, param);
+
+    UCP_WORKER_THREAD_CS_EXIT_CONDITIONAL(worker);
+    return ret;
+}
+
+static UCS_F_ALWAYS_INLINE ucs_status_ptr_t
+ucp_put_common(ucp_ep_h ep, ucp_worker_h worker, const void *buffer,
+               size_t count, uint64_t remote_addr, ucp_rkey_h rkey,
+               const ucp_request_param_t *param)
+{
+    size_t contig_length    = 0;
+    ucp_datatype_t datatype = ucp_dt_make_contig(1);
+    ucp_ep_rma_config_t *rma_config;
+    ucs_status_ptr_t ret;
+    ucs_status_t status;
+    ucp_request_t *req;
+    uint32_t attr_mask;
+
     attr_mask = param->op_attr_mask &
                 (UCP_OP_ATTR_FIELD_DATATYPE | UCP_OP_ATTR_FLAG_NO_IMM_CMPL);
 
     if (worker->context->config.ext.proto_enable) {
         status = ucp_put_send_short(ep, buffer, count, remote_addr, rkey, param);
         if (ucs_likely(status != UCS_ERR_NO_RESOURCE)) {
-            ret = UCS_STATUS_PTR(status);
-            goto out_unlock;
+            return UCS_STATUS_PTR(status);
         }
 
         req = ucp_request_get_param(worker, param,
-                                    {ret = UCS_STATUS_PTR(UCS_ERR_NO_MEMORY);
-                                    goto out_unlock;});
+                                    return UCS_STATUS_PTR(UCS_ERR_NO_MEMORY));
         req->send.rma.rkey        = rkey;
         req->send.rma.remote_addr = remote_addr;
 
@@ -293,8 +274,7 @@ ucs_status_ptr_t ucp_put_nbx(ucp_ep_h ep, const void *buffer, size_t count,
     } else {
         status = UCP_RKEY_RESOLVE(rkey, ep, rma);
         if (status != UCS_OK) {
-            ret = UCS_STATUS_PTR(status);
-            goto out_unlock;
+            return UCS_STATUS_PTR(status);
         }
 
         /* Fast path for a single short message */
@@ -305,14 +285,12 @@ ucs_status_ptr_t ucp_put_nbx(ucp_ep_h ep, const void *buffer, size_t count,
                     ucp_ep_get_fast_lane(ep, rkey->cache.rma_lane), buffer,
                     count, remote_addr, rkey->cache.rma_rkey);
             if (ucs_likely(status != UCS_ERR_NO_RESOURCE)) {
-                ret = UCS_STATUS_PTR(status);
-                goto out_unlock;
+                return UCS_STATUS_PTR(status);
             }
         }
 
         if (ucs_unlikely(param->op_attr_mask & UCP_OP_ATTR_FLAG_FORCE_IMM_CMPL)) {
-            ret = UCS_STATUS_PTR(UCS_ERR_NO_RESOURCE);
-            goto out_unlock;
+            return UCS_STATUS_PTR(UCS_ERR_NO_RESOURCE);
         }
 
         rma_config = &ucp_ep_config(ep)->rma[rkey->cache.rma_lane];
@@ -321,9 +299,26 @@ ucs_status_ptr_t ucp_put_nbx(ucp_ep_h ep, const void *buffer, size_t count,
                                   rma_config->put_zcopy_thresh, param);
     }
 
-out_unlock:
-    UCP_WORKER_THREAD_CS_EXIT_CONDITIONAL(worker);
     return ret;
+}
+
+void ucp_append_amo_cb(void *request, ucs_status_t status, void *user_data)
+{
+    ucp_request_t *req        = request;
+    ucp_request_param_t param = {
+        .op_attr_mask         = UCP_OP_ATTR_FIELD_REQUEST,
+        .request              = request
+    };
+
+    /* Make sure this request ends up in the mpool */
+    req->flags                = (req->flags & ~UCP_REQUEST_FLAG_COMPLETED) |
+                                               UCP_REQUEST_FLAG_RELEASED;
+
+    /* convert the same request from an append to a put */
+    ucp_put_common(req->send.ep, req->send.ep->worker,
+                   req->send.amo.append.buffer, req->send.amo.value,
+                   *(uint64_t*)req->send.buffer, req->send.amo.append.rkey,
+                   &param);
 }
 
 ucs_status_t ucp_get_nbi(ucp_ep_h ep, void *buffer, size_t length,

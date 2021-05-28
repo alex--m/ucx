@@ -240,7 +240,8 @@ private:
     void test_all_opcodes(send_func_t send_func, unsigned num_iters,
                           uint64_t op_mask, int is_ep_flush,
                           ucs_memory_type_t send_mem_type,
-                          ucs_memory_type_t recv_mem_type) {
+                          ucs_memory_type_t recv_mem_type,
+                          bool is_append = false) {
         ucs::detail::message_stream ms("INFO");
 
         ms << ucs_memory_type_names[send_mem_type] << "->" <<
@@ -256,7 +257,7 @@ private:
             ms << opcode_name(data.op) << " ";
             test_xfer(send_func, sizeof(T), num_iters, sizeof(T),
                       send_mem_type, recv_mem_type, 0,
-                      is_ep_flush, 0, &data);
+                      is_ep_flush, 0, is_append, &data);
         }
     }
 };
