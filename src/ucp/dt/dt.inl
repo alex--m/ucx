@@ -8,7 +8,7 @@
 #define UCP_DT_INL_
 
 #include "dt.h"
-#include "dt_contig.h"
+#include "dt_strided.h"
 #include "dt_generic.h"
 #include "dt_iov.h"
 
@@ -43,6 +43,9 @@ size_t ucp_dt_length(ucp_datatype_t datatype, size_t count,
     case UCP_DATATYPE_CONTIG:
         return ucp_contig_dt_length(datatype, count);
 
+    case UCP_DATATYPE_STRIDED:
+        return ucp_strided_dt_length(datatype, count);
+
     case UCP_DATATYPE_IOV:
         ucs_assert(NULL != iov);
         return ucp_dt_iov_length(iov, count);
@@ -68,6 +71,7 @@ ucp_dt_recv_state_init(ucp_dt_state_t *dt_state, void *buffer,
 
     switch (dt & UCP_DATATYPE_CLASS_MASK) {
     case UCP_DATATYPE_CONTIG:
+    case UCP_DATATYPE_STRIDED:
         dt_state->dt.contig.memh       = NULL;
         break;
    case UCP_DATATYPE_IOV:

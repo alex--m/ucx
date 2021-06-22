@@ -89,6 +89,31 @@ ucp_datatype_contig_iter_init(ucp_context_h context, void *buffer,
     return UCS_OK;
 }
 
+static UCS_F_ALWAYS_INLINE ucs_status_t
+ucp_datatype_strided_iter_init(ucp_context_h context, void *buffer,
+                               size_t length, ucp_datatype_iter_t *dt_iter,
+                               const ucp_request_param_t *param)
+{
+    ucs_status_t status = ucp_datatype_contig_iter_init(context, buffer, length,
+                                                        dt_iter, param);
+    if (status != UCS_OK) {
+        return status;
+    }
+
+    // UCS_STATIC_ASSERT(offsetof(type.contig.buffer,  ucp_datatype_iter_t) ==
+    //                   offsetof(type.strided.buffer, ucp_datatype_iter_t));
+    // UCS_STATIC_ASSERT(offsetof(type.contig.memh,    ucp_datatype_iter_t) ==
+    //                   offsetof(type.strided.memh,   ucp_datatype_iter_t));
+
+    dt_iter->type.strided.item_idx = 0;
+    dt_iter->type.strided.item_off = 0;
+    dt_iter->type.strided.item_cnt = ucp_strided_dt_elem_amount(param->datatype);
+    dt_iter->type.strided.item_len = ucp_strided_dt_elem_size(param->datatype);
+    dt_iter->type.strided.stride   = ucp_strided_dt_elem_stride(param->datatype);
+
+    return UCS_OK;
+}
+
 static UCS_F_ALWAYS_INLINE void
 ucp_datatype_generic_iter_init(ucp_context_h context, void *buffer,
                                size_t count, ucp_datatype_t datatype,
@@ -136,6 +161,10 @@ ucp_datatype_iter_init(ucp_context_h context, void *buffer, size_t count,
         *sg_count = 1;
         return ucp_datatype_contig_iter_init(context, buffer, contig_length,
                                              dt_iter, param);
+    } else if (dt_iter->dt_class == UCP_DATATYPE_STRIDED) {
+        *sg_count = 0;
+        return ucp_datatype_strided_iter_init(context, buffer, contig_length,
+                                              dt_iter, param);
     } else if (dt_iter->dt_class == UCP_DATATYPE_IOV) {
         ucp_datatype_iter_iov_set_sg_count(sg_count, count);
         length = ucp_dt_iov_length((const ucp_dt_iov_t*)buffer, count);
@@ -351,12 +380,32 @@ ucp_datatype_iter_is_begin(const ucp_datatype_iter_t *dt_iter)
 }
 
 static UCS_F_ALWAYS_INLINE void
+ucp_datatype_iter_strided_check(const ucp_datatype_iter_t *dt_iter)
+{
+    ucs_assertv((dt_iter->type.strided.item_cnt == 0) ||
+                (dt_iter->type.strided.item_idx < dt_iter->type.strided.item_cnt),
+                "index=%u count=%u", dt_iter->type.strided.item_idx,
+                dt_iter->type.strided.item_cnt);
+    ucs_assertv((dt_iter->type.strided.item_len == 0) ||
+                (dt_iter->type.strided.item_off < dt_iter->type.strided.item_len),
+                "offset=%zu length=%zu", dt_iter->type.strided.item_off,
+                dt_iter->type.strided.item_len);
+}
+
+static UCS_F_ALWAYS_INLINE void
 ucp_datatype_iter_iov_check(const ucp_datatype_iter_t *dt_iter)
 {
     ucs_assertv((dt_iter->type.iov.iov_count == 0) ||
                 (dt_iter->type.iov.iov_index < dt_iter->type.iov.iov_count),
                 "index=%zu count=%zu", dt_iter->type.iov.iov_index,
                 dt_iter->type.iov.iov_count);
+}
+
+static UCS_F_ALWAYS_INLINE void*
+ucp_datatype_iter_strided_get_ptr(const ucp_datatype_iter_t *dt_iter)
+{
+    return dt_iter->type.strided.buffer + dt_iter->type.strided.item_off +
+           (dt_iter->type.strided.item_idx * dt_iter->type.strided.item_len);
 }
 
 /*
@@ -368,6 +417,7 @@ ucp_datatype_iter_next_pack(const ucp_datatype_iter_t *dt_iter,
                             ucp_datatype_iter_t *next_iter, void *dest)
 {
     ucp_dt_generic_t *dt_gen;
+    int strided_skip;
     const void *src;
     size_t length;
 
@@ -379,6 +429,37 @@ ucp_datatype_iter_next_pack(const ucp_datatype_iter_t *dt_iter,
                                      dt_iter->offset);
         ucp_dt_contig_pack(worker, dest, src, length,
                            (ucs_memory_type_t)dt_iter->mem_info.type);
+        break;
+    case UCP_DATATYPE_STRIDED:
+        ucs_assert(dt_iter->mem_info.type < UCS_MEMORY_TYPE_LAST);
+        next_iter->type.strided.item_idx = dt_iter->type.strided.item_idx;
+        next_iter->type.strided.item_cnt = dt_iter->type.strided.item_cnt;
+        next_iter->type.strided.item_off = dt_iter->type.strided.item_off;
+        next_iter->type.strided.item_len = dt_iter->type.strided.item_len;
+        src = ucp_datatype_iter_strided_get_ptr(dt_iter);
+        do {
+            strided_skip = (max_length >= (next_iter->type.strided.item_len -
+                                           next_iter->type.strided.item_off));
+            if (strided_skip) {
+                length                           = next_iter->type.strided.item_len -
+                                                   next_iter->type.strided.item_off;
+                next_iter->type.strided.item_off = 0;
+                next_iter->type.strided.item_idx++;
+            } else {
+                length                            = max_length;
+                next_iter->type.strided.item_off += max_length;
+            }
+
+            ucp_dt_contig_pack(worker, dest, src, length,
+                               (ucs_memory_type_t)dt_iter->mem_info.type);
+
+            if (strided_skip) {
+                length = (next_iter->type.strided.item_len - length) +
+                          next_iter->type.strided.stride;
+                src = UCS_PTR_BYTE_OFFSET(src, next_iter->type.strided.stride);
+            }
+        } while (strided_skip && (next_iter->type.strided.item_idx <
+                                  next_iter->type.strided.item_cnt));
         break;
     case UCP_DATATYPE_IOV:
         ucp_datatype_iter_iov_check(dt_iter);
@@ -407,6 +488,18 @@ ucp_datatype_iter_next_pack(const ucp_datatype_iter_t *dt_iter,
 
     next_iter->offset = dt_iter->offset + length;
     return length;
+}
+
+static UCS_F_ALWAYS_INLINE void
+ucp_datatype_iter_strided_seek(ucp_datatype_iter_t *dt_iter, size_t offset)
+{
+    ucp_datatype_iter_strided_check(dt_iter);
+
+    if (ucs_likely(offset == dt_iter->offset)) {
+        return;
+    }
+
+    ucp_datatype_iter_strided_seek_always(dt_iter, offset);
 }
 
 static UCS_F_ALWAYS_INLINE void
@@ -444,6 +537,32 @@ ucp_datatype_iter_unpack(ucp_datatype_iter_t *dt_iter, ucp_worker_h worker,
         dest = UCS_PTR_BYTE_OFFSET(dt_iter->type.contig.buffer, offset);
         ucp_dt_contig_unpack(worker, dest, src, length,
                              (ucs_memory_type_t)dt_iter->mem_info.type);
+        status = UCS_OK;
+        break;
+    case UCP_DATATYPE_STRIDED:
+        ucs_assert(dt_iter->mem_info.type < UCS_MEMORY_TYPE_LAST);
+        ucp_datatype_iter_strided_seek(dt_iter, offset);
+        dest = ucp_datatype_iter_strided_get_ptr(dt_iter);
+        do {
+            if (length < (dt_iter->type.strided.item_len -
+                          dt_iter->type.strided.item_off)) {
+                unpacked_length    = length;
+                dt_iter->type.strided.item_off += length;
+            } else {
+                unpacked_length                = dt_iter->type.strided.item_len -
+                                                 dt_iter->type.strided.item_off;
+                dt_iter->type.strided.item_off = 0;
+                dt_iter->type.strided.item_idx++;
+            }
+            offset += unpacked_length;
+            length -= unpacked_length;
+
+            ucp_dt_contig_unpack(worker, dest, src, unpacked_length,
+                                 (ucs_memory_type_t)dt_iter->mem_info.type);
+            dest = UCS_PTR_BYTE_OFFSET(dest, dt_iter->type.strided.stride);
+        } while ((dt_iter->length > offset) &&
+                 (dt_iter->type.strided.item_idx <
+                  dt_iter->type.strided.item_cnt));
         status = UCS_OK;
         break;
     case UCP_DATATYPE_IOV:
@@ -603,6 +722,9 @@ ucp_datatype_iter_copy_position(ucp_datatype_iter_t *dt_iter,
     if (ucp_datatype_iter_is_class(dt_iter, UCP_DATATYPE_IOV, dt_mask)) {
         dt_iter->type.iov.iov_index  = src_dt_iter->type.iov.iov_index;
         dt_iter->type.iov.iov_offset = src_dt_iter->type.iov.iov_offset;
+    } else if (ucp_datatype_iter_is_class(dt_iter, UCP_DATATYPE_STRIDED, dt_mask)) {
+        dt_iter->type.strided.item_idx = src_dt_iter->type.strided.item_idx;
+        dt_iter->type.strided.item_off = src_dt_iter->type.strided.item_off;
     }
 }
 
@@ -633,6 +755,9 @@ ucp_datatype_iter_rewind(ucp_datatype_iter_t *dt_iter, unsigned dt_mask)
     if (ucp_datatype_iter_is_class(dt_iter, UCP_DATATYPE_IOV, dt_mask)) {
         dt_iter->type.iov.iov_index  = 0;
         dt_iter->type.iov.iov_offset = 0;
+    } else if (ucp_datatype_iter_is_class(dt_iter, UCP_DATATYPE_STRIDED, dt_mask)) {
+        dt_iter->type.strided.item_idx = 0.;
+        dt_iter->type.strided.item_off = 0;
     }
 }
 

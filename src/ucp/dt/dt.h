@@ -26,7 +26,7 @@ typedef enum ucp_dt_type          ucp_dt_class_t;
  * State of progressing sent/receive operation on a datatype.
  */
 typedef struct ucp_dt_state {
-    size_t                        offset;  /* Total offset in overall payload. */
+    size_t                        offset;         /* Total offset in overall payload. */
     union {
         struct {
             ucp_mem_h             memh;      /* Pointer to memh */

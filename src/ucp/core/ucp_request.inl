@@ -356,6 +356,7 @@ ucp_request_send_state_init(ucp_request_t *req, ucp_datatype_t datatype,
 
     switch (datatype & UCP_DATATYPE_CLASS_MASK) {
     case UCP_DATATYPE_CONTIG:
+    case UCP_DATATYPE_STRIDED:
         req->send.state.dt.dt.contig.memh       = NULL;
         return;
     case UCP_DATATYPE_IOV:

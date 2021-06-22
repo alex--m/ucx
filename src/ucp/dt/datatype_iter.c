@@ -150,6 +150,31 @@ void ucp_datatype_iter_iov_mem_dereg(ucp_datatype_iter_t *dt_iter)
     }
 }
 
+void ucp_datatype_iter_strided_seek_always(ucp_datatype_iter_t *dt_iter,
+                                           size_t offset)
+{
+    ssize_t strided_offset = dt_iter->type.strided.item_off +
+                             (offset - dt_iter->offset);
+    if (strided_offset < 0) {
+        /* seek backwards */
+        do {
+            ucs_assertv(dt_iter->type.strided.item_idx > 0, "dt_iter=%p", dt_iter);
+            --dt_iter->type.strided.item_idx;
+            strided_offset += dt_iter->type.strided.item_len;
+        } while (strided_offset < 0);
+    } else {
+        /* seek forward */
+        while (strided_offset >= dt_iter->type.strided.item_len) {
+            strided_offset -= dt_iter->type.strided.item_len;
+            ++dt_iter->type.strided.item_idx;
+            ucp_datatype_iter_strided_check(dt_iter);
+        }
+    }
+
+    dt_iter->offset                = offset;
+    dt_iter->type.strided.item_off = strided_offset;
+}
+
 void ucp_datatype_iter_iov_seek_always(ucp_datatype_iter_t *dt_iter,
                                        size_t offset)
 {

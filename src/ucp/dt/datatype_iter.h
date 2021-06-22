@@ -44,6 +44,15 @@ typedef struct {
             ucp_mem_h             memh;       /* Memory registration handle */
         } contig;
         struct {
+            void                  *buffer;    /* Base buffer pointer */
+            ucp_mem_h             memh;       /* Memory registration handle */
+            size_t                stride;     /* Stride length */
+            size_t                item_off;   /* Offset within a single item */
+            size_t                item_len;   /* Length of a single item */
+            unsigned              item_idx;   /* Index of the next item */
+            unsigned              item_cnt;   /* Number of items */
+        } strided;
+        struct {
             void                  *buffer;    /* Buffer pointer, needed for restart */
             size_t                count;      /* Count, needed for restart */
             ucp_dt_generic_t      *dt_gen;    /* Generic datatype handle */
@@ -79,6 +88,9 @@ ucs_status_t ucp_datatype_iter_iov_mem_reg(ucp_context_h context,
                                            unsigned uct_flags);
 
 void ucp_datatype_iter_iov_mem_dereg(ucp_datatype_iter_t *dt_iter);
+
+void ucp_datatype_iter_strided_seek_always(ucp_datatype_iter_t *dt_iter,
+                                           size_t offset);
 
 void ucp_datatype_iter_iov_seek_always(ucp_datatype_iter_t *dt_iter,
                                        size_t offset);

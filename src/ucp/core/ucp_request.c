@@ -463,6 +463,7 @@ UCS_PROFILE_FUNC(ucs_status_t, ucp_request_memory_reg,
 
     switch (datatype & UCP_DATATYPE_CLASS_MASK) {
     case UCP_DATATYPE_CONTIG:
+    case UCP_DATATYPE_STRIDED:
         status = ucp_memh_get_or_update(context, buffer, length, mem_type,
                                         reg_md_map, flags,
                                         &state->dt.contig.memh);
@@ -472,7 +473,6 @@ UCS_PROFILE_FUNC(ucs_status_t, ucp_request_memory_reg,
         ucp_trace_req(req, "mem reg md_map 0x%" PRIx64 "/0x%" PRIx64,
                       state->dt.contig.memh->md_map, reg_md_map);
         break;
-
     case UCP_DATATYPE_IOV:
         ucs_assert(!(flags & UCT_MD_MEM_FLAG_HIDE_ERRORS));
         iovcnt = state->dt.iov.iovcnt;
@@ -536,6 +536,7 @@ UCS_PROFILE_FUNC_VOID(ucp_request_memory_dereg, (datatype, state, req),
 
     switch (datatype & UCP_DATATYPE_CLASS_MASK) {
     case UCP_DATATYPE_CONTIG:
+    case UCP_DATATYPE_STRIDED:
         if (state->dt.contig.memh != NULL) {
             ucp_request_dt_dereg(&state->dt.contig.memh, 1, req);
             state->dt.contig.memh = NULL;
