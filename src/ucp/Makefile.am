@@ -41,6 +41,7 @@ noinst_HEADERS = \
 	dt/dt.h \
 	dt/dt.inl \
 	dt/dt_contig.h \
+	dt/dt_strided.h \
 	dt/dt_iov.h \
 	dt/dt_generic.h \
 	pagg/pagg.h \
@@ -101,6 +102,7 @@ libucp_la_SOURCES = \
 	core/ucp_worker.c \
 	dt/datatype_iter.c \
 	dt/dt_contig.c \
+	dt/dt_strided.c \
 	dt/dt_iov.c \
 	dt/dt_generic.c \
 	dt/dt.c \
