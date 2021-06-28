@@ -379,6 +379,9 @@ typedef struct ucp_context {
            unsigned               count;
            size_t                 *sizes;
         } am_mpools;
+
+        /* Flags provided via the initialization parameters */
+        uint64_t                  flags;
     } config;
 
     /* Configuration of multi-threading support */
