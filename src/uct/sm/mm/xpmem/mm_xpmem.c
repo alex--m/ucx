@@ -587,18 +587,6 @@ static void uct_xpmem_global_cleanup()
 }
 
 UCT_MM_TL_DEFINE(xpmem, &uct_xpmem_md_ops, uct_xpmem_rkey_unpack,
-                 uct_xpmem_rkey_release, "XPMEM",
-                 uct_xpmem_iface_config_table, );
-UCT_MM_TL_DEFINE(xpmem, &uct_xpmem_md_ops, uct_xpmem_rkey_unpack,
-                 uct_xpmem_rkey_release, "XPMEM_BCAST",
-                 uct_xpmem_iface_config_table, _bcast);
-UCT_MM_TL_DEFINE(xpmem, &uct_xpmem_md_ops, uct_xpmem_rkey_unpack,
-                 uct_xpmem_rkey_release, "XPMEM_INCAST",
-                 uct_xpmem_iface_config_table, _incast);
+                 uct_xpmem_rkey_release, "XPMEM");
 
-UCT_SINGLE_TL_INIT(&uct_xpmem_component.super, xpmem, ctor,
-                   uct_xpmem_global_init(), uct_xpmem_global_cleanup())
-UCT_SINGLE_TL_INIT(&uct_xpmem_bcast_component.super, xpmem_incast, ctor,
-                   uct_xpmem_global_init(), uct_xpmem_global_cleanup())
-UCT_SINGLE_TL_INIT(&uct_xpmem_incast_component.super, xpmem_bcast, ctor,
-                   uct_xpmem_global_init(), uct_xpmem_global_cleanup())
+UCT_MM_TL_INIT(xpmem, ctor, uct_xpmem_global_init(), uct_xpmem_global_cleanup())

@@ -154,16 +154,16 @@ typedef struct uct_mm_component {
  * Define a memory-mapper component for MM.
  *
  * @param _name         String which is the component name.
- * @param _tl_suffix    Suffix to the name, for extending base transports.
+ * @param _name_suffix  Suffix to the name, for extending base transports.
  * @param _md_ops       Mapper operations, of type uct_mm_mapper_ops_t.
  * @param _rkey_unpack  Remote key unpack function.
  * @param _rkey_release Remote key release function.
  * @param _cfg_prefix   Prefix for configuration environment vars.
  */
-#define UCT_MM_COMPONENT_DEFINE(_name, _tl_suffix, _md_ops, _rkey_unpack, \
+#define UCT_MM_COMPONENT_DEFINE(_name, _name_suffix, _md_ops, _rkey_unpack, \
                                 _rkey_release, _cfg_prefix) \
     \
-    static uct_mm_component_t UCT_COMPONENT_NAME(_name##_tl_suffix) = { \
+    static uct_mm_component_t UCT_COMPONENT_NAME(_name##_name_suffix) = { \
         .super = { \
             .query_md_resources = uct_mm_query_md_resources, \
             .md_open            = uct_mm_md_open, \
@@ -172,16 +172,16 @@ typedef struct uct_mm_component {
             .rkey_ptr           = uct_sm_rkey_ptr, \
             .rkey_release       = _rkey_release, \
             .rkey_compare       = uct_base_rkey_compare, \
-            .name               = #_name #_tl_suffix, \
+            .name               = #_name #_name_suffix, \
             .md_config          = { \
-                .name           = #_name #_tl_suffix " memory domain", \
+                .name           = #_name #_name_suffix " memory domain", \
                 .prefix         = _cfg_prefix, \
                 .table          = uct_##_name##_md_config_table, \
                 .size           = sizeof(uct_##_name##_md_config_t), \
             }, \
             .cm_config          = UCS_CONFIG_EMPTY_GLOBAL_LIST_ENTRY, \
             .tl_list            = UCT_COMPONENT_TL_LIST_INITIALIZER( \
-                                      &UCT_COMPONENT_NAME(_name##_tl_suffix).super), \
+                                      &UCT_COMPONENT_NAME(_name##_name_suffix).super), \
             .flags              = UCT_COMPONENT_FLAG_RKEY_PTR, \
             .md_vfs_init        = \
                     (uct_component_md_vfs_init_func_t)ucs_empty_function \

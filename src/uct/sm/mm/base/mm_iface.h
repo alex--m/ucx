@@ -257,21 +257,71 @@ uct_mm_iface_query_tl_devices(uct_md_h md,
  * @param _cfg_prefix   Prefix for configuration variables
  * @param _cfg_table    Configuration table
  */
-#define UCT_MM_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
-                         _cfg_prefix, _cfg_table, _tl_suffix) \
-    UCT_MM_COMPONENT_DEFINE(_name, _tl_suffix, _md_ops, _rkey_unpack, \
+#define UCT_MM_BASE_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
+                              _cfg_prefix, _tl_suffix, _name_suffix) \
+    UCT_MM_COMPONENT_DEFINE(_name, _name_suffix, _md_ops, _rkey_unpack, \
                             _rkey_release, _cfg_prefix) \
-    UCT_TL_DEFINE_ENTRY(&UCT_COMPONENT_NAME(_name##_tl_suffix).super, \
-                        _name##_tl_suffix, uct_mm_iface_query_tl_devices, \
-                        uct_mm##_tl_suffix##_iface_t, \
-                        _cfg_prefix, _cfg_table, \
+    UCT_TL_DEFINE_ENTRY(&UCT_COMPONENT_NAME(_name##_name_suffix).super, \
+                        _name##_name_suffix, uct_mm_iface_query_tl_devices, \
+                        uct_mm##_tl_suffix##_iface_t, _cfg_prefix, \
+                        uct_##_name##_tl_suffix##_iface_config_table, \
                         uct_mm##_tl_suffix##_iface_config_t)
+
+#define UCT_MM_COLL_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
+                              _cfg_prefix, _tl_suffix) \
+    UCT_TL_DECL(_name) \
+    ucs_config_field_t uct_##_name##_tl_suffix##_iface_config_table[] = { \
+        {"COLL_", "", NULL, \
+         ucs_offsetof(uct_mm##_tl_suffix##_iface_config_t, super), \
+         UCS_CONFIG_TYPE_TABLE(uct_##_name##_iface_config_table)}, \
+        {NULL} \
+    }; \
+    UCT_MM_BASE_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
+                          _cfg_prefix, _tl_suffix, _tl_suffix)
+
+#define UCT_MM_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
+                         _cfg_prefix) \
+    UCT_TL_DECL(_name##_p2p) \
+    UCT_MM_BASE_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
+                          _cfg_prefix, , _p2p) \
+    UCT_MM_COLL_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
+                          _cfg_prefix "BCAST_", _batched_bcast) \
+    UCT_MM_COLL_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
+                          _cfg_prefix "INCAST_", _batched_incast) \
+    UCT_MM_COLL_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
+                          _cfg_prefix "IM_BCAST_", _imbalanced_bcast) \
+    UCT_MM_COLL_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
+                          _cfg_prefix "IM_INCAST_", _imbalanced_incast)
+
+#define UCT_MM_BASE_TL_INIT(_name, _scope, _init_code, _cleanup_code) \
+     UCT_SINGLE_TL_INIT(&UCT_COMPONENT_NAME(_name).super, _name, _scope, \
+                        _init_code, _cleanup_code) \
+
+#define UCT_MM_TL_INIT(_name, _scope, _init_code, _cleanup_code) \
+     UCT_MM_BASE_TL_INIT(_name##_batched_bcast,     _scope, _init_code, _cleanup_code) \
+     UCT_MM_BASE_TL_INIT(_name##_batched_incast,    _scope, _init_code, _cleanup_code) \
+     UCT_MM_BASE_TL_INIT(_name##_imbalanced_bcast,  _scope, _init_code, _cleanup_code) \
+     UCT_MM_BASE_TL_INIT(_name##_imbalanced_incast, _scope, _init_code, _cleanup_code) \
+     UCT_MM_BASE_TL_INIT(_name##_p2p, _scope, _init_code; \
+        uct_##_name##_scope##_batched_bcast_init(); \
+        uct_##_name##_scope##_batched_incast_init(); \
+        uct_##_name##_scope##_imbalanced_bcast_init(); \
+        uct_##_name##_scope##_imbalanced_incast_init(), \
+        uct_##_name##_scope##_batched_bcast_cleanup(); \
+        uct_##_name##_scope##_batched_incast_cleanup(); \
+        uct_##_name##_scope##_imbalanced_bcast_cleanup(); \
+        uct_##_name##_scope##_imbalanced_incast_cleanup(); \
+        _cleanup_code)
 
 
 extern ucs_config_field_t uct_mm_iface_config_table[];
 extern ucs_config_field_t uct_mm_coll_iface_config_table[];
-extern ucs_config_field_t uct_mm_incast_iface_config_table[];
-extern ucs_config_field_t uct_mm_bcast_iface_config_table[];
+typedef struct uct_mm_bcast_iface_config uct_mm_base_bcast_iface_config_t,
+                                         uct_mm_batched_bcast_iface_config_t,
+                                         uct_mm_imbalanced_bcast_iface_config_t;
+typedef struct uct_mm_incast_iface_config uct_mm_base_incast_iface_config_t,
+                                          uct_mm_batched_incast_iface_config_t,
+                                          uct_mm_imbalanced_incast_iface_config_t;
 
 static UCS_F_ALWAYS_INLINE int
 uct_mm_iface_fifo_flag_no_new_data(uint8_t flags,

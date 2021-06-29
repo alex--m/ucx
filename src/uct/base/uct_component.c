@@ -26,21 +26,21 @@ UCS_LIST_HEAD(uct_components_list);
 
 UCT_TL_DECL(self)
 UCT_TL_DECL(tcp)
-UCT_TL_DECL(posix)
-UCT_TL_DECL(sysv)
+UCT_TL_DECL(posix_p2p)
+UCT_TL_DECL(sysv_p2p)
 
 void UCS_F_CTOR uct_init()
 {
     uct_self_init();
     uct_tcp_init();
-    uct_sysv_init();
-    uct_posix_init();
+    uct_sysv_p2p_init();
+    uct_posix_p2p_init();
 }
 
 void UCS_F_DTOR uct_cleanup()
 {
-    uct_posix_cleanup();
-    uct_sysv_cleanup();
+    uct_posix_p2p_cleanup();
+    uct_sysv_p2p_cleanup();
     uct_tcp_cleanup();
     uct_self_cleanup();
 }

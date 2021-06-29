@@ -408,7 +408,7 @@ static ucp_lane_index_t ucp_proto_common_find_lanes_internal(
     ucp_rsc_index_t rsc_index;
     ucp_md_index_t md_index;
     ucp_lane_map_t lane_map;
-    char lane_desc[64];
+    char lane_desc[100];
     size_t max_iov;
 
     if (max_lanes == 0) {
