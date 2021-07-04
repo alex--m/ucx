@@ -109,10 +109,11 @@ int main(int argc, char **argv)
     int ret         = -1;
     char *root_name = NULL;
     ucs_status_t status;
+    void *test_string;
 
     /* Parse the command line */
     status = parse_cmd(argc, argv, &root_name);
-    CHKERR_JUMP(status != UCS_OK, "parse_cmd\n", err);
+    CHKERR_JUMP(status != UCS_OK, "parse_cmd", err);
 
     ucg_minimal_ctx_t ctx;
     struct sockaddr_in sock_addr   = {
@@ -127,15 +128,19 @@ int main(int argc, char **argv)
             .addrlen               = sizeof(struct sockaddr)
     };
 
-    void *test_string = mem_type_malloc(test_string_length);
-    CHKERR_JUMP(test_string == NULL, "allocate memory\n", err);
+    CHKERR_JUMP(sock_addr.sin_addr.s_addr == (uint32_t)-1, "lookup IP\n", err);
 
-    status = ucg_minimal_init(&ctx, &server_address, num_connections, root_name ? UCG_MINIMAL_FLAG_SERVER : 0);
-    CHKERR_JUMP(status != UCS_OK, "ucg_minimal_init\n", err_cleanup);
+    test_string = mem_type_malloc(test_string_length);
+    CHKERR_JUMP(test_string == NULL, "allocate memory", err);
+    snprintf(test_string, test_string_length, "Hello world!");
 
-    status = ucg_minimal_broadcast(&ctx, test_string, sizeof(test_string_length));
-    CHKERR_JUMP(status != UCS_OK, "ucg_minimal_broadcast\n", err_finalize);
+    status = ucg_minimal_init(&ctx, &server_address, num_connections, root_name ? 0 : UCG_MINIMAL_FLAG_SERVER);
+    CHKERR_JUMP(status != UCS_OK, "ucg_minimal_init", err_cleanup);
 
+    status = ucg_minimal_broadcast(&ctx, test_string, test_string_length);
+    CHKERR_JUMP(status != UCS_OK, "ucg_minimal_broadcast", err_finalize);
+
+    printf("%s", test_string);
     ret = 0;
 
 err_finalize:
