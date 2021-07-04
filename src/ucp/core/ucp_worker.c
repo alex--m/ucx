@@ -2917,6 +2917,9 @@ static void ucp_worker_destroy_eps(ucp_worker_h worker,
     ucs_debug("worker %p: destroy %s endpoints", worker, ep_type_name);
     ucs_list_for_each_safe(ep_ext, tmp, ep_list, ep_list) {
         ep = ep_ext->ep;
+
+        ucp_ep_update_flags(ep, UCP_EP_FLAG_FLUSH_STATE_VALID, 0); // TODO: remove!
+
         /* Cleanup pending operations on the UCP EP before destroying it, since
          * ucp_ep_destroy_internal() expects the pending queues of the UCT EPs
          * will be empty before they are destroyed */
