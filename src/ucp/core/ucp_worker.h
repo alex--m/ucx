@@ -451,4 +451,45 @@ ucp_worker_flush_ops_count_add(ucp_worker_h worker, int count)
     worker->flush_ops_count = flush_ops_count;
 }
 
+static UCS_F_ALWAYS_INLINE ucs_status_t
+ucp_worker_set_async_timer(ucp_worker_h worker, ucs_async_event_cb_t cb,
+                           void *cb_arg, ucs_time_t interval, int *timer_id_p)
+{
+    ucs_status_t status;
+
+    ucs_async_context_t *async = &worker->async;
+    ucs_async_mode_t mode      = async->mode;
+
+    UCS_ASYNC_BLOCK(async);
+
+    status = ucs_async_add_timer(mode, interval, cb, cb_arg, async, timer_id_p);
+    if (status != UCS_OK) {
+        ucs_error("unable to add timer handler: %s", ucs_status_string(status));
+    }
+
+    UCS_ASYNC_UNBLOCK(async);
+
+    return status;
+}
+
+static UCS_F_ALWAYS_INLINE ucs_status_t
+ucp_worker_unset_async_timer(ucp_worker_h worker, int timer_id)
+{
+    ucs_status_t status;
+
+    ucs_async_context_t *async = &worker->async;
+
+    UCS_ASYNC_BLOCK(async);
+
+    status = ucs_async_remove_handler(timer_id, 1);
+    if (status != UCS_OK) {
+        ucs_error("unable to remove timer handler %d: %s",
+                  timer_id, ucs_status_string(status));
+    }
+
+    UCS_ASYNC_UNBLOCK(async);
+
+    return status;
+}
+
 #endif

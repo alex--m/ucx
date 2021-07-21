@@ -56,6 +56,10 @@ nobase_dist_libucs_la_HEADERS = \
 	memory/memory_type.h \
 	memory/memtype_cache.h \
 	memory/numa.h \
+	pmodule/cache.h \
+	pmodule/component.h \
+	pmodule/framework.h \
+	pmodule/object.h \
 	profile/profile_defs.h \
 	profile/profile_off.h \
 	profile/profile_on.h \
@@ -192,6 +196,10 @@ libucs_la_SOURCES = \
 	memory/numa.c \
 	memory/rcache.c \
 	memory/rcache_vfs.c \
+	pmodule/cache.c \
+	pmodule/component.c \
+	pmodule/framework.c \
+	pmodule/object.c \
 	profile/profile.c \
 	stats/stats.c \
 	sys/event_set.c \
