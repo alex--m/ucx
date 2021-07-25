@@ -17,9 +17,17 @@ libucf_la_LIBADD   = \
 	../ucs/libucs.la \
 	../uct/libuct.la \
 	../ucp/libucp.la \
-	../ucg/libucg.la \
 	base/libucf_base.la \
 	builtin/libucf_builtin.la
+	
+if HAVE_UCG
+
+SUBDIRS          += over_ucg
+libucf_la_LIBADD += \
+	../ucg/libucg.la \
+	over_ucg/libucf_over_ucg.la
+
+endif # HAVE_UCG
 
 nobase_dist_libucf_la_HEADERS = \
 	api/ucf_def.h \
