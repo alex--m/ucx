@@ -624,9 +624,11 @@ static void ucm_malloc_test(int events)
         p[0] = realloc(p[0], large_alloc_size * 2);
         free(p[0]);
 
+#ifndef HAVE_UCM_TCMALLOC
         if (ucm_malloc_hook_state.hook_called) {
             ucm_dlmalloc_trim(0);
         }
+#endif
     } else {
         /* in bistro mode we can't guarantee event fire on malloc calls,
          * let's just try to call sbrk directly & catch it */
@@ -736,9 +738,11 @@ static ucm_reloc_patch_t ucm_malloc_symbol_patches[] = {
 
 static ucm_reloc_patch_t ucm_malloc_optional_symbol_patches[] = {
     { "mallopt", ucm_malloc_mallopt },
+#ifndef HAVE_UCM_TCMALLOC
     { "mallinfo", ucm_dlmallinfo },
     { "malloc_stats", ucm_dlmalloc_stats },
     { "malloc_trim", ucm_dlmalloc_trim },
+#endif
     { "malloc_usable_size", ucm_malloc_usable_size },
     { NULL, NULL }
 };
@@ -757,6 +761,7 @@ static void ucm_malloc_install_optional_symbols()
 
 static void ucm_malloc_set_env_mallopt()
 {
+#ifndef HAVE_UCM_TCMALLOC
     /* copy values of M_MMAP_THRESHOLD and M_TRIM_THRESHOLD
      * if they were overriden by the user
      */
@@ -773,6 +778,7 @@ static void ucm_malloc_set_env_mallopt()
         ucm_debug("set mmap_thresh to %d", atoi(p));
         ucm_malloc_mallopt(M_MMAP_THRESHOLD, atoi(p));
     }
+#endif
 }
 
 static void ucm_malloc_init_orig_funcs()

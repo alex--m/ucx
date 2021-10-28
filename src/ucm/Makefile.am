@@ -46,6 +46,12 @@ libucm_la_SOURCES = \
 	bistro/bistro_aarch64.c \
 	bistro/bistro_ppc64.c
 
+if HAVE_UCM_TCMALLOC
+libucm_la_LDFLAGS += $(TCMALLOC_LIB)
+libucm_la_SOURCES += tcmalloc/malloc.c
+noinst_HEADERS    += tcmalloc/malloc.h
+endif
+
 if HAVE_UCM_PTMALLOC286
 libucm_la_CPPFLAGS += \
     -fno-strict-aliasing \

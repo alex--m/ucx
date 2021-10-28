@@ -8,12 +8,23 @@
 #
 # Memory allocator selection
 #
+
+SAVE_LDFLAGS="$LDFLAGS"
+AC_CHECK_LIB([tcmalloc], [tc_malloc],
+             [have_tcmalloc=yes
+              AC_SUBST([TCMALLOC_LIB],["-ltcmalloc"])],
+             [have_tcmalloc=no])
+AM_CONDITIONAL([HAVE_TCMALLOC],[test "x$have_tcmalloc" = "xyes"])
+
+
 AC_ARG_WITH([allocator],
     [AC_HELP_STRING([--with-allocator=NAME],
         [Build UCX with predefined memory allocator. The supported values are:
-         ptmalloc286. Default: ptmalloc286])],
+         ptmalloc286, tcmalloc. Default: tcmalloc])],
         [],
-        [with_allocator=ptmalloc286])
+        [AS_IF([test "x$have_tcmalloc" = "xyes"],
+               [with_allocator=tcmalloc],
+               [with_allocator=ptmalloc286])])
 
 case ${with_allocator} in
     ptmalloc286)
@@ -21,12 +32,18 @@ case ${with_allocator} in
         AC_DEFINE([HAVE_UCM_PTMALLOC286], 1, [Use ptmalloc-2.8.6 version])
         HAVE_UCM_PTMALLOC286=yes
         ;;
+    tcmalloc)
+        AC_MSG_NOTICE(Memory allocator is tcmalloc)
+        AC_DEFINE([HAVE_UCM_TCMALLOC], 1, [Use tcmalloc])
+        HAVE_UCM_TCMALLOC=yes
+        ;;
     *)
         AC_MSG_ERROR(Cannot continue. Unsupported memory allocator name
                      in --with-allocator=[$with_allocator])
         ;;
 esac
 
+AM_CONDITIONAL([HAVE_UCM_TCMALLOC],[test "x$HAVE_UCM_TCMALLOC" = "xyes"])
 AM_CONDITIONAL([HAVE_UCM_PTMALLOC286],[test "x$HAVE_UCM_PTMALLOC286" = "xyes"])
 
 AC_CHECK_FUNCS([malloc_get_state malloc_set_state],
@@ -84,13 +101,3 @@ AS_IF([test "x$bistro_hooks_happy" = "xyes"],
        AC_MSG_WARN([BISTRO mmap hook mode is disabled])])
 
 AC_CHECK_FUNCS([__curbrk], [], [], [])
-
-#
-# tcmalloc library - for testing only
-#
-SAVE_LDFLAGS="$LDFLAGS"
-AC_CHECK_LIB([tcmalloc], [tc_malloc],
-             [have_tcmalloc=yes
-              TCMALLOC_LIB="-ltcmalloc"],
-             [have_tcmalloc=no])
-AM_CONDITIONAL([HAVE_TCMALLOC],[test "x$have_tcmalloc" = "xyes"])
