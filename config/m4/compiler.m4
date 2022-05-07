@@ -347,7 +347,40 @@ AS_IF([test "x$with_avx" != xyes],
                                  [#include <popcntintrin.h>
                                   int main(int argc, char** argv) { return _mm_popcnt_u32(0x101) - 2;
                                   }])
+       COMPILER_CPU_OPTIMIZATION([avx512f], [AVX512F], [-mavx512f],
+                                 [#include <immintrin.h>
+                                  int main(int argc, char** argv) {
+                                      return _mm512_reduce_add_epi32(_mm512_setzero_epi32());
+                                  }
+                                 ])
       ])
+
+
+#
+# CLDEMOTE
+#
+COMPILER_CPU_OPTIMIZATION([cldemote], [CLDEMOTE], [-mcldemote],
+                          [int main() {
+                               int a; asm volatile("cldemote (%0)" :: "r"(&a) : "memory"); return 0;
+                           }])
+
+
+#
+# CLWB
+#
+COMPILER_CPU_OPTIMIZATION([clwb], [CLWB], [-mclwb],
+                          [int main() {
+                               int a; asm volatile("clwb (%0)" :: "r"(&a) : "memory"); return 0;
+                           }])
+
+
+#
+# CLFLUSH
+#
+COMPILER_CPU_OPTIMIZATION([clflush], [CLFLUSH], [-mclflush],
+                          [int main() {
+                               int a; asm volatile("clflush (%0)" :: "r"(&a) : "memory"); return 0;
+                           }])
 
 
 DETECT_UARCH()
