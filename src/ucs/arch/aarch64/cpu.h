@@ -251,6 +251,27 @@ static inline void ucs_arch_clear_cache(void *start, void *end)
 }
 #endif
 
+static inline void ucs_arch_share_cache(void *addr)
+{
+    asm volatile ("dc cvac, %0" : : "r" (addr) : "memory");
+}
+
+static inline void ucs_arch_clear_cache(void *start, void *end)
+{
+    uintptr_t ptr;
+    unsigned dcache;
+    unsigned ctr_el0;
+
+
+    asm volatile ("mrs\t%0, ctr_el0":"=r" (ctr_el0));
+    dcache = sizeof(int) << ((ctr_el0 >> 16) & 0xf);
+
+    for (ptr = ucs_align_down((uintptr_t)start, dcache); ptr < (uintptr_t)end; ptr += dcache) {
+        ucs_arch_share_cache((void*)ptr);
+    }
+    asm volatile ("dsb ish" ::: "memory");
+}
+
 #if defined(__ARM_FEATURE_SVE)
 static inline void *memcpy_aarch64_sve(void *dest, const void *src, size_t len)
 {
@@ -296,6 +317,11 @@ ucs_memcpy_nontemporal(void *dst, const void *src, size_t len)
 static inline ucs_status_t ucs_arch_get_cache_size(size_t *cache_sizes)
 {
     return UCS_ERR_UNSUPPORTED;
+}
+
+static inline int ucs_arch_cache_line_is_equal(const void *a, const void *b)
+{
+    return (0 == memcmp(a, b, UCS_ARCH_CACHE_LINE_SIZE));
 }
 
 END_C_DECLS

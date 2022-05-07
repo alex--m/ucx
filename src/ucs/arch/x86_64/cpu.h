@@ -8,6 +8,7 @@
 #ifndef UCS_ASM_X86_64_H_
 #define UCS_ASM_X86_64_H_
 
+#include <ucs/arch/atomic.h>
 #include <ucs/sys/compiler.h>
 #include <ucs/arch/generic/cpu.h>
 #include <ucs/sys/compiler_def.h>
@@ -19,8 +20,11 @@
 #ifdef __SSE4_1__
 #  include <smmintrin.h>
 #endif
-#ifdef __AVX__
+#if defined(__AVX__)
 #  include <immintrin.h>
+#endif
+#if defined(__CLWB__) || defined(__CLDEMOTE__)
+#  include <x86intrin.h>
 #endif
 
 BEGIN_C_DECLS
@@ -88,10 +92,24 @@ static inline void ucs_arch_clear_cache(void *start, void *end)
     char *ptr;
 
     for (ptr = (char*)start; ptr < (char*)end; ptr++) {
-        asm volatile("mfence; clflush %0; mfence" :: "m" (*ptr));
+        ucs_memory_bus_fence();
+        _mm_clflush(*ptr);
+        ucs_memory_bus_fence();
     }
 }
 #endif
+
+static inline void ucs_arch_share_cache(void *addr)
+{
+    /**
+     * This forces the x86 store-buffers to be flushed, so that the data becomes
+     * visible from every core. Note: CLFLUSH and co. are no good here, since it
+     * incurs a cache miss on all the peers (and all cache levels).
+     */
+#if HAVE_CLDEMOTE
+    _mm_cldemote(addr);
+#endif
+}
 
 static inline void *ucs_memcpy_relaxed(void *dst, const void *src, size_t len)
 {
@@ -116,6 +134,20 @@ static UCS_F_ALWAYS_INLINE void
 ucs_memcpy_nontemporal(void *dst, const void *src, size_t len)
 {
     ucs_x86_memcpy_sse_movntdqa(dst, src, len);
+}
+
+static inline int ucs_arch_cache_line_is_equal(const void *a, const void *b)
+{
+#ifdef __AVX512F__
+    ucs_assert(((uintptr_t)a % UCS_ARCH_CACHE_LINE_SIZE) == 0);
+    ucs_assert(((uintptr_t)b % UCS_ARCH_CACHE_LINE_SIZE) == 0);
+
+    return (0 == _mm512_cmp_ps_mask(_mm512_load_ps(a),
+                                    _mm512_load_ps(b),
+                                    _MM_CMPINT_NE));
+#else
+    return (0 == memcmp(a, b, UCS_ARCH_CACHE_LINE_SIZE));
+#endif
 }
 
 END_C_DECLS

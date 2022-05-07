@@ -147,7 +147,8 @@ AC_DEFUN([COMPILER_CPU_OPTIMIZATION],
                              BASE_CFLAGS="$BASE_CFLAGS $3"
                              AS_IF([test "x$1" != "xmcpu" -a "x$1" != "xmarch"],
                                    [OPT_CFLAGS="$OPT_CFLAGS|$1"])],
-                            [AC_MSG_RESULT([no])])
+                            [AC_MSG_RESULT([no])
+                             with_$1=no])
            CFLAGS="$SAVE_CFLAGS"])
 ])
 
@@ -355,7 +356,67 @@ AS_IF([test "x$with_avx" != xyes],
                                  [#include <popcntintrin.h>
                                   int main(int argc, char** argv) { return _mm_popcnt_u32(0x101) - 2;
                                   }])
-      ])
+      ],
+      [COMPILER_CPU_OPTIMIZATION([avx512f], [AVX512F], [-mavx512f],
+                                 [#include <immintrin.h>
+                                  int main(int argc, char** argv) {
+                                      return _mm512_reduce_add_epi32(_mm512_setzero_epi32());
+                                  }])])
+
+
+#
+# CLDEMOTE
+#
+AC_ARG_WITH([cldemote],
+            [AC_HELP_STRING([--with-cldemote], [Use CLDEMOTE compiler option.])],
+            [],
+            [with_cldemote=$enable_optimizations])
+AS_IF([test "x$with_cldemote" != xno],
+      [AC_CHECK_DECL([_mm_cldemote],
+                     [AC_DEFINE([HAVE_CLDEMOTE], [1], [CLDEMOTE support])
+                      BASE_CFLAGS="$BASE_CFLAGS -mcldemote"],
+                     [], [#include <x86intrin.h>])])
+
+
+#
+# CLWB
+#
+AC_ARG_WITH([clwb],
+            [AC_HELP_STRING([--with-clwb], [Use CLWB compiler option.])],
+            [],
+            [with_clwb=$enable_optimizations])
+AS_IF([test "x$with_clwb" != xno],
+      [AC_CHECK_DECL([_mm_clwb],
+                     [AC_DEFINE([HAVE_CLWB], [1], [CLWB support])
+                      BASE_CFLAGS="$BASE_CFLAGS -mclwb"],
+                     [], [#include <x86intrin.h>])])
+
+
+#
+# CLFLUSH
+#
+AC_ARG_WITH([clflush],
+            [AC_HELP_STRING([--with-clflush], [Use CLFLUSH compiler option.])],
+            [],
+            [with_clflush=$enable_optimizations])
+AS_IF([test "x$with_clflush" != xno],
+      [AC_CHECK_DECL([_mm_clflush],
+                     [AC_DEFINE([HAVE_CLFLUSH], [1], [CLFLUSH support])],
+                     [], [#include <x86intrin.h>])])
+
+
+#
+# CLFLUSHOPT
+#
+AC_ARG_WITH([clflushopt],
+            [AC_HELP_STRING([--with-clflushopt], [Use CLFLUSHOPT compiler option.])],
+            [],
+            [with_clflushopt=$enable_optimizations])
+AS_IF([test "x$with_clflushopt" != xno],
+      [AC_CHECK_DECL([_mm_clflushopt],
+                     [AC_DEFINE([HAVE_CLFLUSHOPT], [1], [CLFLUSHOPT support])
+                      BASE_CFLAGS="$BASE_CFLAGS -mclflushopt"],
+                     [], [#include <x86intrin.h>])])
 
 
 DETECT_UARCH()

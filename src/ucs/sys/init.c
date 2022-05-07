@@ -26,6 +26,7 @@
 #include <ucs/sys/topo/base/topo.h>
 #include <ucs/sys/math.h>
 
+ucs_cpu_flag_t g_supported_cpu_flags;
 
 /* run-time CPU detection */
 static UCS_F_NOOPTIMIZE void ucs_check_cpu_flags(void)
@@ -36,20 +37,25 @@ static UCS_F_NOOPTIMIZE void ucs_check_cpu_flags(void)
     struct {
         const char* flag;
         ucs_cpu_flag_t value;
+        int is_optional;
     } *p_flags,
     cpu_flags_array[] = {
-        { "cmov", UCS_CPU_FLAG_CMOV },
-        { "mmx", UCS_CPU_FLAG_MMX },
-        { "mmx2", UCS_CPU_FLAG_MMX2 },
-        { "sse", UCS_CPU_FLAG_SSE },
-        { "sse2", UCS_CPU_FLAG_SSE2 },
-        { "sse3", UCS_CPU_FLAG_SSE3 },
-        { "ssse3", UCS_CPU_FLAG_SSSE3 },
-        { "sse41", UCS_CPU_FLAG_SSE41 },
-        { "sse42", UCS_CPU_FLAG_SSE42 },
-        { "avx", UCS_CPU_FLAG_AVX },
-        { "avx2", UCS_CPU_FLAG_AVX2 },
-        { NULL, UCS_CPU_FLAG_UNKNOWN },
+        { "cldemote", UCS_CPU_FLAG_CLDEMOTE, 1 },
+        { "clwb",     UCS_CPU_FLAG_CLWB,     1 },
+        { "clflush",  UCS_CPU_FLAG_CLFLUSH,  1 },
+        { "cmov",     UCS_CPU_FLAG_CMOV,     0 },
+        { "mmx",      UCS_CPU_FLAG_MMX,      0 },
+        { "mmx2",     UCS_CPU_FLAG_MMX2,     0 },
+        { "sse",      UCS_CPU_FLAG_SSE,      0 },
+        { "sse2",     UCS_CPU_FLAG_SSE2,     0 },
+        { "sse3",     UCS_CPU_FLAG_SSE3,     0 },
+        { "ssse3",    UCS_CPU_FLAG_SSSE3,    0 },
+        { "sse41",    UCS_CPU_FLAG_SSE41,    0 },
+        { "sse42",    UCS_CPU_FLAG_SSE42,    0 },
+        { "avx",      UCS_CPU_FLAG_AVX,      0 },
+        { "avx2",     UCS_CPU_FLAG_AVX2,     0 },
+        { "avx512f",  UCS_CPU_FLAG_AVX512F,  0 },
+        { NULL,       UCS_CPU_FLAG_UNKNOWN,  0 }
     };
 
     cpu_flags = ucs_arch_get_cpu_flag();
@@ -63,7 +69,7 @@ static UCS_F_NOOPTIMIZE void ucs_check_cpu_flags(void)
         p_flags = cpu_flags_array;
         while (p_flags && p_flags->flag) {
             if (!strcmp(p_str, p_flags->flag)) {
-                if (!(cpu_flags & p_flags->value)) {
+                if (!p_flags->is_optional && !(cpu_flags & p_flags->value)) {
                     fprintf(stderr, "[%s:%d] FATAL: UCX library was compiled with %s"
                             " but CPU does not support it.\n",
                             ucs_get_host_name(), getpid(), p_flags->flag);
@@ -81,6 +87,8 @@ static UCS_F_NOOPTIMIZE void ucs_check_cpu_flags(void)
         }
         p_str = strtok(NULL, " |\t\n\r");
     }
+
+    g_supported_cpu_flags = cpu_flags;
 }
 
 static void ucs_modules_load()

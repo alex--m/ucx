@@ -508,6 +508,9 @@ int ucs_arch_get_cpu_flag()
             if (_edx & (1 << 15)) {
                 result |= UCS_CPU_FLAG_CMOV;
             }
+            if (_edx & (1 << 19)) {
+                result |= UCS_CPU_FLAG_CLFLUSH;
+            }
             if (_edx & (1 << 23)) {
                 result |= UCS_CPU_FLAG_MMX;
             }
@@ -540,9 +543,20 @@ int ucs_arch_get_cpu_flag()
             }
         }
         if (base_value >= 7) {
-            ucs_x86_cpuid(X86_CPUID_GET_EXTD_VALUE, &_eax, &_ebx, &_ecx, &_edx);
-            if ((result & UCS_CPU_FLAG_AVX) && (_ebx & (1 << 5))) {
-                result |= UCS_CPU_FLAG_AVX2;
+            ucs_x86_cpuid_ecx(X86_CPUID_GET_EXTD_VALUE, 0, &_eax, &_ebx, &_ecx, &_edx);
+            if (result & UCS_CPU_FLAG_AVX) {
+                if (_ebx & (1 << 5)) {
+                    result |= UCS_CPU_FLAG_AVX2;
+                }
+                if (_ebx & (1 << 16)) {
+                    result |= UCS_CPU_FLAG_AVX512F;
+                }
+            }
+            if (_ecx & (1 << 25)) {
+                result |= UCS_CPU_FLAG_CLDEMOTE;
+            }
+            if (_ebx & (1 << 24)) {
+                result |= UCS_CPU_FLAG_CLWB;
             }
         }
         cpu_flag = result;
