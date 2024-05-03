@@ -21,7 +21,7 @@
  * When this endpoint is destroyed, the lane in UCP endpoint is replaced with
  * the real transport endpoint.
  *
- * TODO make sure it works with err handling and print_ucp_info
+ * TODO make sure it works with err handling and print_ucx_info
  */
 typedef struct ucp_proxy_ep {
     uct_ep_t        super;     /**< Derived from uct_ep */

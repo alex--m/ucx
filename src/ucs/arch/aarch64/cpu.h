@@ -13,6 +13,7 @@
 #include <time.h>
 #include <string.h>
 #include <sys/times.h>
+#include <ucm/util/log.h>
 #include <ucs/sys/compiler_def.h>
 #include <ucs/arch/generic/cpu.h>
 #include <ucs/sys/math.h>
@@ -273,7 +274,9 @@ static inline void ucs_arch_clear_cache(void *start, void *end)
 }
 
 #if defined(__ARM_FEATURE_SVE)
-static inline void *memcpy_aarch64_sve(void *dest, const void *src, size_t len)
+static UCS_F_ALWAYS_INLINE void*
+memcpy_aarch64_sve(void *dest, int nontemporal_dst, const void *src,
+                   int nontemporal_src, size_t len)
 {
     uint8_t *dest_u8      = (uint8_t*) dest;
     const uint8_t *src_u8 = (uint8_t*) src;
@@ -281,7 +284,19 @@ static inline void *memcpy_aarch64_sve(void *dest, const void *src, size_t len)
     svbool_t pg           = svwhilelt_b8_u64(i, (uint64_t)len);
 
     do {
-        svst1_u8(pg, &dest_u8[i], svld1_u8(pg, &src_u8[i]));
+        if (nontemporal_dst) {
+            if (nontemporal_src) {
+                svstnt1_u8(pg, &dest_u8[i], svldnt1_u8(pg, &src_u8[i]));
+            } else {
+                svstnt1_u8(pg, &dest_u8[i], svld1_u8(pg, &src_u8[i]));
+            }
+        } else {
+            if (nontemporal_src) {
+                svst1_u8(pg, &dest_u8[i], svldnt1_u8(pg, &src_u8[i]));
+            } else {
+                svst1_u8(pg, &dest_u8[i], svld1_u8(pg, &src_u8[i]));
+            }
+        }
         i += svcntb();
         pg = svwhilelt_b8_u64(i, (uint64_t)len);
     } while (svptest_first(svptrue_b8(), pg));
@@ -294,24 +309,53 @@ static inline void *ucs_memcpy_relaxed(void *dst, const void *src, size_t len)
 {
 #if defined(HAVE_AARCH64_THUNDERX2)
     return __memcpy_thunderx2(dst, src, len);
-#elif defined(__ARM_FEATURE_SVE)
-    return memcpy_aarch64_sve(dst, src, len);
 #else
     return memcpy(dst, src, len);
 #endif
 }
 
 static UCS_F_ALWAYS_INLINE void
-ucs_memcpy_nontemporal(void *dst, const void *src, size_t len)
+ucs_memcpy_nontemporal(void* restrict dst, const void* restrict src, size_t len)
 {
-#if defined(HAVE_AARCH64_THUNDERX2)
-    __memcpy_thunderx2(dst, src,len);
-#elif defined(__ARM_FEATURE_SVE)
-    memcpy_aarch64_sve(dst, src, len);
+#if defined(__ARM_FEATURE_SVE)
+    memcpy_aarch64_sve(dst, 1, src, 1, len);
 #else
     memcpy(dst, src, len);
 #endif
+}
 
+static UCS_F_ALWAYS_INLINE void
+ucs_memcpy_nontemporal_cache_line(void* restrict dst, int is_dst_nt,
+                                  const void* restrict src)
+{
+    ucm_assert(((uintptr_t)dst % UCS_ARCH_CACHE_LINE_SIZE) == 0);
+    ucm_assert(((uintptr_t)src % UCS_ARCH_CACHE_LINE_SIZE) == 0);
+
+    ucs_memcpy_nontemporal(dst, src, UCS_ARCH_CACHE_LINE_SIZE);
+}
+
+static UCS_F_ALWAYS_INLINE void
+ucs_memcpy_128b(void* restrict dst, int is_dst_aligned_64, int is_dst_nt,
+                const void* restrict src, uintptr_t src_offset, uintptr_t len)
+{
+    src = UCS_PTR_BYTE_OFFSET(src, src_offset);
+    if (is_dst_nt) {
+        ucs_memcpy_nontemporal(dst, src, len);
+    } else {
+        memcpy(dst, src, len);
+    }
+}
+
+static UCS_F_ALWAYS_INLINE void
+ucs_memcpy_512b(void* restrict dst, int is_dst_aligned_64, int is_dst_nt,
+                const void* restrict src, uintptr_t src_offset, uintptr_t len)
+{
+    src = UCS_PTR_BYTE_OFFSET(src, src_offset);
+    if (is_dst_nt) {
+        ucs_memcpy_nontemporal(dst, src, len);
+    } else {
+        memcpy(dst, src, len);
+    }
 }
 
 static inline ucs_status_t ucs_arch_get_cache_size(size_t *cache_sizes)
@@ -319,7 +363,8 @@ static inline ucs_status_t ucs_arch_get_cache_size(size_t *cache_sizes)
     return UCS_ERR_UNSUPPORTED;
 }
 
-static inline int ucs_arch_cache_line_is_equal(const void *a, const void *b)
+static inline int ucs_arch_cache_line_is_equal(const void* restrict a,
+                                               const void* restrict b)
 {
     return (0 == memcmp(a, b, UCS_ARCH_CACHE_LINE_SIZE));
 }

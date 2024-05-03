@@ -89,3 +89,33 @@ UCS_TEST_F(test_debug, print_backtrace) {
 
     free(data);
 }
+
+static void* test_func_shared(void *trace_ctx)
+{
+    return ucs_debug_get_ctx_by_trace(trace_ctx);
+}
+
+static void* test_func_a(void)
+{
+    return test_func_shared((void*)&test_func_a);
+}
+
+static void* test_func_b(void)
+{
+    return test_func_shared((void*)&test_func_b);
+}
+
+static void* test_func_c(void)
+{
+    return test_func_shared((void*)&test_func_c);
+}
+
+UCS_TEST_F(test_debug, context_per_trace) {
+    EXPECT_EQ(NULL, ucs_debug_get_ctx_by_trace(NULL));
+    for (int i = 0; i < 3; i++) {
+        EXPECT_EQ(&test_func_a, test_func_a());
+        EXPECT_EQ(&test_func_b, test_func_b());
+        EXPECT_EQ(&test_func_c, test_func_c());
+    }
+    ucs_debug_clear_traces();
+}

@@ -8,9 +8,11 @@
 examplesdir = $(pkgdatadir)/examples
 dist_examples_DATA =   \
 	hello_world_util.h \
+	ucg_hello_world.c  \
 	ucp_hello_world.c  \
 	uct_hello_world.c  \
 	ucp_client_server.c \
+	ucg_publisher_subscriber.c \
 	ucp_util.h
 
 if HAVE_CUDA
@@ -33,22 +35,18 @@ installcheck-local:
 	@echo "INSTALLCHECK: Compiling examples with installed library"
 	$(CC) -o uct_hello_world   $(examplesdir)/uct_hello_world.c   -luct $(EXAMPLE_CCLD_FLAGS)
 	$(CC) -o ucp_hello_world   $(examplesdir)/ucp_hello_world.c   -lucp $(EXAMPLE_CCLD_FLAGS)
-	if HAVE_UCG
 	$(CC) -o ucg_hello_world   $(examplesdir)/ucg_hello_world.c   -lucg $(EXAMPLE_CCLD_FLAGS)
-	endif
 	$(CC) -o ucp_client_server $(examplesdir)/ucp_client_server.c -lucp $(EXAMPLE_CCLD_FLAGS)
 	$(RM) *.o uct_hello_world ucp_hello_world ucg_hello_world ucp_client_server
 
 if HAVE_EXAMPLES
 
 noinst_PROGRAMS = \
+	ucg_hello_world \
 	ucp_hello_world \
 	uct_hello_world \
-	ucp_client_server
-
-if HAVE_UCG
-dist_examples_DATA += ucg_hello_world.c
-noinst_PROGRAMS    += ucg_hello_world
+	ucp_client_server \
+	ucg_pubsub
 
 ucg_hello_world_SOURCES  = ucg_hello_world.c
 ucg_hello_world_CFLAGS   = $(BASE_CFLAGS) $(EXAMPLE_CUDA_CFLAGS)
@@ -56,7 +54,6 @@ ucg_hello_world_CPPFLAGS = $(BASE_CPPFLAGS) $(EXAMPLE_CUDA_CPPFLAGS)
 ucg_hello_world_LDFLAGS  = $(EXAMPLE_CUDA_LD_FLAGS)
 ucg_hello_world_LDADD    = $(top_builddir)/src/ucg/libucg.la \
                            $(EXAMPLE_CUDA_LIBS)
-endif
 
 ucp_hello_world_SOURCES  = ucp_hello_world.c
 ucp_hello_world_CFLAGS   = $(BASE_CFLAGS) $(EXAMPLE_CUDA_CFLAGS)
@@ -81,5 +78,12 @@ ucp_client_server_LDFLAGS  = $(EXAMPLE_CUDA_LD_FLAGS)
 ucp_client_server_LDADD    = $(top_builddir)/src/ucs/libucs.la \
                              $(top_builddir)/src/ucp/libucp.la \
                              $(EXAMPLE_CUDA_LIBS)
+
+ucg_pubsub_SOURCES  = ucg_publisher_subscriber.c
+ucg_pubsub_CFLAGS   = $(BASE_CFLAGS) $(EXAMPLE_CUDA_CFLAGS)
+ucg_pubsub_CPPFLAGS = $(BASE_CPPFLAGS) $(EXAMPLE_CUDA_CPPFLAGS)
+ucg_pubsub_LDFLAGS  = $(EXAMPLE_CUDA_LD_FLAGS)
+ucg_pubsub_LDADD    = $(top_builddir)/src/ucg/libucg.la \
+                      $(EXAMPLE_CUDA_LIBS)
 
 endif

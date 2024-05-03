@@ -4,7 +4,7 @@
  */
 
 
-void ucf_get_version(unsigned *major_version, unsigned *minor_version,
+void ucb_get_version(unsigned *major_version, unsigned *minor_version,
                      unsigned *release_number)
 {
     *major_version  = @MAJOR_VERSION@;
@@ -12,7 +12,7 @@ void ucf_get_version(unsigned *major_version, unsigned *minor_version,
     *release_number = @PATCH_VERSION@;
 }
 
-const char *ucf_get_version_string()
+const char *ucb_get_version_string()
 {
     return "@MAJOR_VERSION@.@MINOR_VERSION@.@PATCH_VERSION@";
 }

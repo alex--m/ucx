@@ -404,8 +404,9 @@ ucp_datatype_iter_iov_check(const ucp_datatype_iter_t *dt_iter)
 static UCS_F_ALWAYS_INLINE void*
 ucp_datatype_iter_strided_get_ptr(const ucp_datatype_iter_t *dt_iter)
 {
-    return dt_iter->type.strided.buffer + dt_iter->type.strided.item_off +
-           (dt_iter->type.strided.item_idx * dt_iter->type.strided.item_len);
+    return UCS_PTR_BYTE_OFFSET(dt_iter->type.strided.buffer,
+        dt_iter->type.strided.item_off + (dt_iter->type.strided.item_idx *
+                                          dt_iter->type.strided.item_len));
 }
 
 /*

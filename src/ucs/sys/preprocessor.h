@@ -50,12 +50,15 @@
  * e.g
  * UCS_PP_FOREACH(macro, arg, a, b, c) will expand to: macro(arg, a) macro(arg, b) macro(arg, c)
  * UCS_PP_FOREACH_SEP(macro, arg, a, b, c) will expand to: macro(arg, a), macro(arg, b), macro(arg, c)
+ * UCS_PP_FOREACH_NUM(macro, 3, a, b) will expand to: macro(a, b, 0) macro(a, b, 1) macro(a, b, 2)
  * UCS_PP_ZIP((a, b, c), (1, 2, 3)) will expand to: (a, 1), (b, 2), (c, 3)
  */
 #define UCS_PP_FOREACH(_macro, _arg, ...) \
     UCS_PP_TOKENPASTE(_UCS_PP_FOREACH_, UCS_PP_NUM_ARGS(__VA_ARGS__))(_macro, _arg, __VA_ARGS__)
 #define UCS_PP_FOREACH_SEP(_macro, _arg, ...) \
     UCS_PP_TOKENPASTE(_UCS_PP_FOREACH_SEP_, UCS_PP_NUM_ARGS(__VA_ARGS__))(_macro, _arg, __VA_ARGS__)
+#define UCS_PP_FOREACH_NUM(_macro, _num, ...) \
+    UCS_PP_TOKENPASTE(_UCS_PP_FOREACH_NUM_, _num)(_macro, __VA_ARGS__)
 #define UCS_PP_ZIP(_l1, _l2) \
     UCS_PP_TOKENPASTE(_UCS_PP_ZIP_, UCS_PP_NUM_ARGS _l1)(_l1, _l2)
 
@@ -80,6 +83,28 @@
 #define _UCS_PP_FOREACH_18(_macro, _arg, _arg1, ...)  _macro(_arg, _arg1) _UCS_PP_FOREACH_17(_macro, _arg, __VA_ARGS__)
 #define _UCS_PP_FOREACH_19(_macro, _arg, _arg1, ...)  _macro(_arg, _arg1) _UCS_PP_FOREACH_18(_macro, _arg, __VA_ARGS__)
 #define _UCS_PP_FOREACH_20(_macro, _arg, _arg1, ...)  _macro(_arg, _arg1) _UCS_PP_FOREACH_19(_macro, _arg, __VA_ARGS__)
+
+#define _UCS_PP_FOREACH_NUM_0(_macro , ...)
+#define _UCS_PP_FOREACH_NUM_1(_macro , ...)  _macro(__VA_ARGS__, 0)
+#define _UCS_PP_FOREACH_NUM_2(_macro , ...)  _macro(__VA_ARGS__, 1)  _UCS_PP_FOREACH_NUM_1 (_macro, __VA_ARGS__)
+#define _UCS_PP_FOREACH_NUM_3(_macro , ...)  _macro(__VA_ARGS__, 2)  _UCS_PP_FOREACH_NUM_2 (_macro, __VA_ARGS__)
+#define _UCS_PP_FOREACH_NUM_4(_macro , ...)  _macro(__VA_ARGS__, 3)  _UCS_PP_FOREACH_NUM_3 (_macro, __VA_ARGS__)
+#define _UCS_PP_FOREACH_NUM_5(_macro , ...)  _macro(__VA_ARGS__, 4)  _UCS_PP_FOREACH_NUM_4 (_macro, __VA_ARGS__)
+#define _UCS_PP_FOREACH_NUM_6(_macro , ...)  _macro(__VA_ARGS__, 5)  _UCS_PP_FOREACH_NUM_5 (_macro, __VA_ARGS__)
+#define _UCS_PP_FOREACH_NUM_7(_macro , ...)  _macro(__VA_ARGS__, 6)  _UCS_PP_FOREACH_NUM_6 (_macro, __VA_ARGS__)
+#define _UCS_PP_FOREACH_NUM_8(_macro , ...)  _macro(__VA_ARGS__, 7)  _UCS_PP_FOREACH_NUM_7 (_macro, __VA_ARGS__)
+#define _UCS_PP_FOREACH_NUM_9(_macro , ...)  _macro(__VA_ARGS__, 8)  _UCS_PP_FOREACH_NUM_8 (_macro, __VA_ARGS__)
+#define _UCS_PP_FOREACH_NUM_10(_macro, ...)  _macro(__VA_ARGS__, 9)  _UCS_PP_FOREACH_NUM_9 (_macro, __VA_ARGS__)
+#define _UCS_PP_FOREACH_NUM_11(_macro, ...)  _macro(__VA_ARGS__, 10) _UCS_PP_FOREACH_NUM_10(_macro, __VA_ARGS__)
+#define _UCS_PP_FOREACH_NUM_12(_macro, ...)  _macro(__VA_ARGS__, 11) _UCS_PP_FOREACH_NUM_11(_macro, __VA_ARGS__)
+#define _UCS_PP_FOREACH_NUM_13(_macro, ...)  _macro(__VA_ARGS__, 12) _UCS_PP_FOREACH_NUM_12(_macro, __VA_ARGS__)
+#define _UCS_PP_FOREACH_NUM_14(_macro, ...)  _macro(__VA_ARGS__, 13) _UCS_PP_FOREACH_NUM_13(_macro, __VA_ARGS__)
+#define _UCS_PP_FOREACH_NUM_15(_macro, ...)  _macro(__VA_ARGS__, 14) _UCS_PP_FOREACH_NUM_14(_macro, __VA_ARGS__)
+#define _UCS_PP_FOREACH_NUM_16(_macro, ...)  _macro(__VA_ARGS__, 15) _UCS_PP_FOREACH_NUM_15(_macro, __VA_ARGS__)
+#define _UCS_PP_FOREACH_NUM_17(_macro, ...)  _macro(__VA_ARGS__, 16) _UCS_PP_FOREACH_NUM_16(_macro, __VA_ARGS__)
+#define _UCS_PP_FOREACH_NUM_18(_macro, ...)  _macro(__VA_ARGS__, 17) _UCS_PP_FOREACH_NUM_17(_macro, __VA_ARGS__)
+#define _UCS_PP_FOREACH_NUM_19(_macro, ...)  _macro(__VA_ARGS__, 18) _UCS_PP_FOREACH_NUM_18(_macro, __VA_ARGS__)
+#define _UCS_PP_FOREACH_NUM_20(_macro, ...)  _macro(__VA_ARGS__, 19) _UCS_PP_FOREACH_NUM_19(_macro, __VA_ARGS__)
 
 #define _UCS_PP_FOREACH_SEP_0(_macro , _arg, _arg1, ...)
 #define _UCS_PP_FOREACH_SEP_1(_macro , _arg, _arg1, ...)  _macro(_arg, _arg1)

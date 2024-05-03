@@ -25,19 +25,20 @@ typedef struct uct_rdmacm_cm_ep {
 enum {
     UCT_RDMACM_CM_EP_ON_CLIENT                 = UCS_BIT(0),
     UCT_RDMACM_CM_EP_ON_SERVER                 = UCS_BIT(1),
-    UCT_RDMACM_CM_EP_CLIENT_RESOLVE_CB_INVOKED = UCS_BIT(2), /* Resolved callback was
+    UCT_RDMACM_CM_EP_MULTICAST                 = UCS_BIT(2),
+    UCT_RDMACM_CM_EP_CLIENT_RESOLVE_CB_INVOKED = UCS_BIT(3), /* Resolved callback was
                                                                 invoked on the client. */
-    UCT_RDMACM_CM_EP_CLIENT_CONN_CB_INVOKED    = UCS_BIT(3), /* Connect callback was
+    UCT_RDMACM_CM_EP_CLIENT_CONN_CB_INVOKED    = UCS_BIT(4), /* Connect callback was
                                                                 invoked on the client. */
-    UCT_RDMACM_CM_EP_SERVER_NOTIFY_CB_INVOKED  = UCS_BIT(4), /* Notify callback was
+    UCT_RDMACM_CM_EP_SERVER_NOTIFY_CB_INVOKED  = UCS_BIT(5), /* Notify callback was
                                                                 invoked on the server. */
-    UCT_RDMACM_CM_EP_GOT_DISCONNECT            = UCS_BIT(5), /* Got disconnect event. */
-    UCT_RDMACM_CM_EP_DISCONNECTING             = UCS_BIT(6), /* @ref uct_ep_disconnect was
+    UCT_RDMACM_CM_EP_GOT_DISCONNECT            = UCS_BIT(6), /* Got disconnect event. */
+    UCT_RDMACM_CM_EP_DISCONNECTING             = UCS_BIT(7), /* @ref uct_ep_disconnect was
                                                                 called on the ep. */
-    UCT_RDMACM_CM_EP_FAILED                    = UCS_BIT(7), /* The EP is in error state,
+    UCT_RDMACM_CM_EP_FAILED                    = UCS_BIT(8), /* The EP is in error state,
                                                                 see @ref
                                                                 uct_rdmacm_cm_ep_t::status.*/
-    UCT_RDMACM_CM_EP_QPN_CREATED               = UCS_BIT(8)  /* QPN was created. */
+    UCT_RDMACM_CM_EP_QPN_CREATED               = UCS_BIT(9)  /* QPN was created. */
 };
 
 

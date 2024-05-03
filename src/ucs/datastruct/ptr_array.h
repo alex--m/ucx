@@ -97,9 +97,9 @@ void ucs_ptr_array_init(ucs_ptr_array_t *ptr_array, const char *name);
 /**
  * Cleanup the array.
  *
- * @param ptr_array  Pointer to a ptr array.
- * @param leak_check Whether to check for leaks (elements which were not
- *                   freed from this ptr array).
+ * @param [in] ptr_array  Pointer to a ptr array.
+ * @param [in] leak_check Whether to check for leaks (elements which were not
+ *                        freed from this ptr array).
  */
 void ucs_ptr_array_cleanup(ucs_ptr_array_t *ptr_array, int leak_check);
 
@@ -181,7 +181,7 @@ void *ucs_ptr_array_replace(ucs_ptr_array_t *ptr_array, unsigned element_index,
  * @return Number of elements of the ptr array.
  */
 static UCS_F_ALWAYS_INLINE unsigned
-ucs_ptr_array_get_elem_count(ucs_ptr_array_t *ptr_array)
+ucs_ptr_array_get_elem_count(const ucs_ptr_array_t *ptr_array)
 {
     return ptr_array->count;
 }
@@ -195,7 +195,7 @@ ucs_ptr_array_get_elem_count(ucs_ptr_array_t *ptr_array)
  * @return Whether the ptr array is empty.
  */
 static UCS_F_ALWAYS_INLINE int
-ucs_ptr_array_is_empty(ucs_ptr_array_t *ptr_array)
+ucs_ptr_array_is_empty(const ucs_ptr_array_t *ptr_array)
 {
     return ptr_array->count == 0;
 }
@@ -227,7 +227,7 @@ ucs_ptr_array_is_empty(ucs_ptr_array_t *ptr_array)
  * @return size_elem - The number of free elements ahead if free, if not 1.
  */
 static UCS_F_ALWAYS_INLINE uint32_t
-__ucs_ptr_array_for_each_get_step_size(ucs_ptr_array_t *ptr_array,
+__ucs_ptr_array_for_each_get_step_size(const ucs_ptr_array_t *ptr_array,
                                        unsigned element_index)
 {
     uint32_t size_elem;
@@ -306,8 +306,8 @@ ucs_ptr_array_locked_init(ucs_ptr_array_locked_t *locked_ptr_array,
  * Cleanup the locked array.
  *
  * @param [in] locked_ptr_array    Pointer to a locked ptr array.
- * @param leak_check Whether to check for leaks (elements which were not
- *                   freed from this ptr array).
+ * @param [in] leak_check          Whether to check for leaks (elements which
+ *                                 were not freed from this ptr array).
  */
 void ucs_ptr_array_locked_cleanup(ucs_ptr_array_locked_t *locked_ptr_array,
                                   int leak_check);
@@ -480,7 +480,7 @@ ucs_ptr_array_locked_lookup(ucs_ptr_array_locked_t *locked_ptr_array,
  * @return Number of elements in the locked ptr array.
  */
 static UCS_F_ALWAYS_INLINE unsigned
-ucs_ptr_array_locked_get_elem_count(ucs_ptr_array_locked_t *locked_ptr_array)
+ucs_ptr_array_locked_get_elem_count(const ucs_ptr_array_locked_t *locked_ptr_array)
 {
     return ucs_ptr_array_get_elem_count(&locked_ptr_array->super);
 }
@@ -494,7 +494,7 @@ ucs_ptr_array_locked_get_elem_count(ucs_ptr_array_locked_t *locked_ptr_array)
  * @return Whether the locked ptr array is empty.
  */
 static UCS_F_ALWAYS_INLINE int
-ucs_ptr_array_locked_is_empty(ucs_ptr_array_locked_t *locked_ptr_array)
+ucs_ptr_array_locked_is_empty(const ucs_ptr_array_locked_t *locked_ptr_array)
 {
     return ucs_ptr_array_is_empty(&locked_ptr_array->super);
 }

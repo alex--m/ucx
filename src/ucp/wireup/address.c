@@ -697,6 +697,14 @@ static uint64_t ucp_address_flags_from_iface_flags(uint64_t iface_cap_flags,
         iface_flags |= UCP_ADDR_IFACE_FLAG_TAG_RNDV;
     }
 
+    if (iface_cap_flags & UCT_IFACE_FLAG_INCAST) {
+        iface_flags |= UCP_ADDR_IFACE_FLAG_INCAST;
+    }
+
+    if (iface_cap_flags & UCT_IFACE_FLAG_BCAST) {
+        iface_flags |= UCP_ADDR_IFACE_FLAG_BCAST;
+    }
+
     if (iface_event_flags & UCT_IFACE_FLAG_EVENT_RECV) {
         iface_flags |= UCP_ADDR_IFACE_FLAG_EVENT_RECV;
     }
@@ -1297,7 +1305,7 @@ ucp_address_do_pack(ucp_worker_h worker, ucp_ep_h ep, void *buffer, size_t size,
             wiface = (iface_id_base == 0) ?
                      ucp_worker_iface(worker, dev->rsc_index) :
                      ucp_worker_iface_with_offset(worker, dev->rsc_index,
-                                                  tl_bitmap, iface_id_base);
+                                                  *tl_bitmap, iface_id_base);
             status = uct_iface_get_device_address(wiface->iface,
                                                   (uct_device_addr_t*)ptr);
             if (status != UCS_OK) {
@@ -1317,7 +1325,7 @@ ucp_address_do_pack(ucp_worker_h worker, ucp_ep_h ep, void *buffer, size_t size,
             wiface     = (iface_id_base == 0) ?
                          ucp_worker_iface(worker, rsc_index) :
                          ucp_worker_iface_with_offset(worker, rsc_index,
-                                                      tl_bitmap, iface_id_base);
+                                                      *tl_bitmap, iface_id_base);
             iface_attr = &wiface->attr;
 
             if (!ucp_worker_iface_can_connect(iface_attr)) {

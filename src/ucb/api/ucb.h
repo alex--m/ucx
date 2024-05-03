@@ -8,8 +8,9 @@
 #define UCB_H_
 
 #include <ucb/api/ucb_def.h>
+#include <ucb/api/ucb_version.h>
+#include <uct/api/uct_def.h>
 #include <ucp/api/ucp.h>
-#include <ucs/pmodule/framework.h>
 
 BEGIN_C_DECLS
 
@@ -59,11 +60,13 @@ BEGIN_C_DECLS
  * @ingroup UCB_CONTEXT
  * @brief UCB worker parameters field mask.
  *
- * The enumeration allows specifying which fields in @ref ucb_worker_params_t are
+ * The enumeration allows specifying which fields in @ref ucb_pipes_params_t are
  * present. It is used to enable backward compatibility support.
  */
 enum ucb_params_field {
-    UCB_PARAM_FIELD_COMPLETION_CB = UCS_BIT(1) /**< Actions upon completion */
+    UCB_PARAM_FIELD_NAME              = UCS_BIT(0), /**< Name for this context */
+    UCB_PARAM_FIELD_CONTEXT_HEADROOM  = UCS_BIT(1), /**< Extra space in context */
+    UCB_PARAM_FIELD_COMPLETION_CB     = UCS_BIT(2)  /**< Actions upon completion */
 };
 
 /**
@@ -74,39 +77,52 @@ enum ucb_params_field {
  * initialization by @ref ucb_init .
  */
 typedef struct ucb_params {
-    const ucs_pmodule_framework_params_t *super;
-    const ucp_params_t                   *ucp;
+    const ucp_params_t *super; /** Pointer is better suited for ABI compatibility */
 
     /**
      * Mask of valid fields in this structure, using bits from
      * @ref ucb_params_field. Fields not specified in this mask will be ignored.
      * Provides ABI compatibility with respect to adding new fields.
      */
-    uint64_t field_mask;
+    uint64_t     field_mask;
+
+    /**
+     * Tracing and analysis tools can identify the context using this name.
+     * To retrieve the context's name, use @ref ucg_context_query, as the name
+     * you supply may be changed by UCX under some circumstances, e.g. a name
+     * conflict. This field is only assigned if you set
+     * @ref UCG_PARAM_FIELD_NAME in the field mask. If not, then a default
+     * unique name will be created for you.
+     */
+    const char *name;
+
+    /** Head-room before the allocated context pointer, for extensions */
+    size_t context_headroom;
 
     /* Requested action upon completion (for non-blocking calls) */
     struct {
-        /* Callback function to invoke upon completion of a batch call */
-        void (*coll_comp_cb_f)(void *req, ucs_status_t status);
+        /* Callback function to call upon immediate completion (within call) */
+        void (*blocking_comp_cb_f)(void *req, ucs_status_t status);
 
-        /* offset where to set completion (ignored unless coll_comp_cb is NULL) */
-        size_t comp_flag_offset;
+        /* Callback function to call upon async. completion (during progress) */
+        void (*nonblocking_comp_cb_f)(void *req, ucs_status_t status);
 
-        /* offset where to write status (ignored unless coll_comp_cb is NULL) */
-        size_t comp_status_offset;
+        /* Callback function to call upon async. completion of persistent ops */
+        void (*persistent_nb_comp_cb_f)(void *req, ucs_status_t status);
     } completion;
-
 } ucb_params_t;
 
 /**
  * @ingroup UCB_WORKER
  * @brief UCB worker parameters field mask.
  *
- * The enumeration allows specifying which fields in @ref ucb_worker_params_t are
+ * The enumeration allows specifying which fields in @ref ucb_pipes_params_t are
  * present. It is used to enable backward compatibility support.
  */
-enum ucb_worker_params_field {
-    UCB_WORKER_PARAM_FIELD_SUPER = UCS_BIT(0), /**< UCP worker parameters */
+enum ucb_pipes_params_field {
+    UCB_PIPES_PARAM_FIELD_NAME       = UCS_BIT(0), /**< Pipes name */
+    UCB_PIPES_PARAM_FIELD_UCP_WORKER = UCS_BIT(1), /**< UCP Worker object */
+    UCB_PIPES_PARAM_FIELD_CD_MASTER  = UCS_BIT(2)
 };
 
 /**
@@ -114,18 +130,33 @@ enum ucb_worker_params_field {
  * @brief Creation parameters for the UCB worker.
  *
  * The structure defines the parameters that are used during the UCB worker
- * @ref ucb_worker_create "creation".
+ * @ref ucb_pipes_create "creation".
  */
-typedef struct ucb_worker_params {
+typedef struct ucb_pipes_params {
     /**
      * Mask of valid fields in this structure, using bits from
-     * @ref ucb_worker_params_field. Fields not specified in this mask will be
+     * @ref ucb_pipes_params_field. Fields not specified in this mask will be
      * ignored. Provides ABI compatibility with respect to adding new fields.
      */
     uint64_t field_mask;
 
-    ucp_worker_params_t *super;
-} ucb_worker_params_t;
+    /**
+     * Tracing and analysis tools can identify the pipes using this name. To
+     * retrieve the group's name, use @ref ucg_pipes_query, as the name you
+     * supply may be changed by UCX under some circumstances, e.g. a name
+     * conflict. This field is only assigned if you set
+     * @ref UCB_PIPES_PARAM_FIELD_NAME in the field mask. If not, then a
+     * default unique name will be created for you.
+     */
+    const char *name;
+
+    ucp_worker_h worker;
+
+    /**
+     * TODO: document, and hopefully make more generic
+     */
+    uct_ep_h *cd_master_ep_p;
+} ucb_pipes_params_t;
 
 /**
  * @ingroup UCB_WORKER
@@ -156,15 +187,15 @@ typedef struct ucb_batch_params {
  *
  * @note The worker object is allocated within context of the calling thread
  *
- * @param [in]  params     User defined @ref ucb_worker_params_t configurations for the
- *                         @ref ucb_group_h "UCB worker".
- * @param [out] worker_p   A pointer to the worker object allocated by the
- *                         UCB library
+ * @param [in]  params      User defined @ref ucb_pipes_params_t configurations
+ *                          for the @ref ucb_pipes_h "UCB pipes".
+ * @param [out] pipes_p     A pointer to the worker object allocated by the
+ *                          UCB library
  *
  * @return Error code as defined by @ref ucs_status_t
  */
-ucs_status_t ucb_worker_create(const ucb_worker_params_t *params,
-                               ucb_worker_h *worker_p);
+ucs_status_t ucb_pipes_create(const ucb_pipes_params_t *params,
+                              ucb_pipes_h *pipes_p);
 
 
 /**
@@ -182,26 +213,26 @@ ucs_status_t ucb_worker_create(const ucb_worker_params_t *params,
  * The destroy process releases and shuts down all resources associated with
  * the @ref ucb_group_h "group".
  *
- * @param [in]  worker       Worker object to destroy.
+ * @param [in]  pipes       Pipes object to destroy.
  */
-void ucb_worker_destroy(ucb_worker_h worker);
+void ucb_pipes_destroy(ucb_pipes_h pipes);
 
 
 /**
  * @ingroup UCB_BATCH
- * @brief Creates a batch operation on a worker object.
+ * @brief Creates a batch operation on the given pipes.
  * The parameters are intentionally non-constant, to allow UCB to write-back some
  * information and avoid redundant actions on the next call. For example, memory
  * registration handles are written back to the parameters pointer passed to the
  * function, and are re-used in subsequent calls.
  *
- * @param [in]  worker        Group of participants in this batch operation.
+ * @param [in]  pipes        Pipes to apply this batch operation to.
  * @param [in]  params       File operation parameters.
- * @param [in]  batch          File operation handle.
+ * @param [in]  batch        File operation handle.
  *
  * @return Error code as defined by @ref ucs_status_t
  */
-ucs_status_t ucb_batch_create(ucb_worker_h worker,
+ucs_status_t ucb_batch_create(ucb_pipes_h pipes,
                               const ucb_batch_params_t *params,
                               ucb_batch_h *batch_p);
 
@@ -210,15 +241,26 @@ ucs_status_t ucb_batch_create(ucb_worker_h worker,
  * @ingroup UCB_BATCH
  * @brief Starts a batch operation.
  *
- * @param [in]  batch          File operation handle.
+ * @param [in]  batch        Batched operation handle.
  * @param [in]  req          Request handle, allocated by the user.
+ * @param [out] progress_f_p Function to use for progress/completion polling.
  *
  * @return UCS_OK           - The batch operation was completed immediately.
- * @return UCS_INPROGRESS   - The batch was not completed and is in progress.
- *
- * @return Error code as defined by @ref ucs_status_t
+ * @return UCS_PTR_IS_ERR(_ptr) - The batch operation failed and an error
+ *                                code indicates the status.
+ * @return otherwise        - The batch operation has started, and can be
+ *                            completed at any point in time. A request handle
+ *                            is returned to the application in order to track
+ *                            progress of the operation: either through the
+ *                            worker-wide @ref ucp_worker_progress or through
+ *                            the progress function returned (the latter is only
+ *                            recommended for blocking calls). No need to close
+ *                            the returned handle - it'll become useless once
+ *                            the batch is complete (further use of it in
+ *                            progress calls will be useless, yet harmless).
  */
-ucs_status_t ucb_batch_start(ucb_batch_h batch, void *req);
+ucs_status_ptr_t ucb_batch_start(ucb_batch_h batch, void *req,
+                                 ucb_batch_progress_t *progress_f_p);
 
 
 /**
@@ -249,7 +291,7 @@ ucb_batch_progress_t ucb_request_get_progress(ucb_batch_h batch);
  * called with the @a status argument of the callback set to UCS_OK, and in a
  * case it is canceled the @a status argument is set to UCS_ERR_CANCELED.
  */
-void ucb_request_cancel(ucb_batch_h batch);
+void ucb_request_cancel(ucb_batch_h batch, void *req);
 
 
 /**
@@ -352,8 +394,6 @@ void ucb_config_print(const ucb_config_t *config, FILE *stream,
  */
 ucs_status_t ucb_init_version(unsigned ucb_api_major_version,
                               unsigned ucb_api_minor_version,
-                              unsigned ucp_api_major_version,
-                              unsigned ucp_api_minor_version,
                               const ucb_params_t *params,
                               const ucb_config_t *config,
                               ucb_context_h *context_p);
@@ -386,9 +426,13 @@ ucs_status_t ucb_init_version(unsigned ucb_api_major_version,
  *
  * @return Error code as defined by @ref ucs_status_t
  */
-ucs_status_t ucb_init(const ucb_params_t *params,
-                      const ucb_config_t *config,
-                      ucb_context_h *context_p);
+static inline ucs_status_t ucb_init(const ucb_params_t *params,
+                                    const ucb_config_t *config,
+                                    ucb_context_h *context_p)
+{
+    return ucb_init_version(UCB_API_MAJOR, UCB_API_MINOR, params, config,
+                            context_p);
+}
 
 
 /**
@@ -405,10 +449,9 @@ ucs_status_t ucb_init(const ucb_params_t *params,
  * the application context. After calling this routine, calling any UCB
  * routine without calling @ref ucb_init "UCB initialization routine" is invalid.
  *
- * @param [in] context_p   Handle to @ref ucb_context_h
- *                         "UCB application context".
+ * @param [in] context   Handle to @ref ucb_context_h "UCB application context".
  */
-void ucb_cleanup(ucb_context_h context_p);
+void ucb_cleanup(ucb_context_h context);
 
 
 /**
@@ -429,13 +472,13 @@ void ucb_context_print_info(const ucb_context_h context, FILE *stream);
  * @ingroup UCB_CONTEXT
  * @brief Gain access to the internal UCP context within a UCB context.
  *
- * This routine allows applications using UCB to call UCB APIs as well.
+ * This routine allows applications using UCB to call UCP APIs as well.
  *
  * @param [in] context Handle to @ref ucb_context_h "UCB application context".
  *
- * @return Handle to an internal @ref ucp_context_h "UCB application context".
+ * @return Handle to an internal @ref ucp_context_h "UCP application context".
  */
-ucp_context_h ucb_context_get_ucp(ucp_context_h context);
+ucp_context_h ucb_context_get_ucp(ucb_context_h context);
 
 
 /**

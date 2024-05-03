@@ -105,12 +105,11 @@ ucp_worker_keepalive_is_enabled(ucp_worker_h worker)
  */
 static UCS_F_ALWAYS_INLINE ucp_worker_iface_t*
 ucp_worker_iface_with_offset(ucp_worker_h worker, ucp_rsc_index_t rsc_index,
-                             const ucp_tl_bitmap_t *tl_bitmap,
-                             unsigned iface_tl_offset)
+                             ucp_tl_bitmap_t tl_bitmap, unsigned iface_tl_offset)
 {
     ucs_assert(rsc_index != UCP_NULL_RESOURCE);
 
-    return worker->ifaces[UCP_WORKER_RSC_INDEX_OFFSET(rsc_index, *tl_bitmap,
+    return worker->ifaces[UCP_WORKER_RSC_INDEX_OFFSET(rsc_index, tl_bitmap,
                                                       iface_tl_offset)];
 }
 
@@ -120,15 +119,14 @@ ucp_worker_iface_with_offset(ucp_worker_h worker, ucp_rsc_index_t rsc_index,
 static UCS_F_ALWAYS_INLINE ucp_worker_iface_t*
 ucp_worker_iface(ucp_worker_h worker, ucp_rsc_index_t rsc_index)
 {
-    ucp_tl_bitmap_t *tl_bitmap = &worker->context->tl_bitmap;
-
     if (rsc_index == UCP_NULL_RESOURCE) {
         return NULL;
     }
 
-    ucs_assert(UCS_BITMAP_GET(*tl_bitmap, rsc_index));
+    ucs_assert(UCS_BITMAP_GET(worker->context->tl_bitmap, rsc_index));
 
-    return ucp_worker_iface_with_offset(worker, rsc_index, tl_bitmap, 0);
+    return ucp_worker_iface_with_offset(worker, rsc_index,
+                                        worker->context->tl_bitmap, 0);
 }
 
 /**
@@ -142,7 +140,7 @@ ucp_worker_iface_get_attr(ucp_worker_h worker, ucp_rsc_index_t rsc_index)
     }
 
     return &ucp_worker_iface_with_offset(worker, rsc_index,
-                                         &ucp_tl_bitmap_max, 0)->attr;
+                                         ucp_tl_bitmap_max, 0)->attr;
 }
 
 /**

@@ -17,20 +17,17 @@ int send_ioctl(cmd_context_t *ctx, void *cmd) {
 static struct ethtool_gstrings *
 get_stringset(cmd_context_t *ctx, enum ethtool_stringset set_id,
               ptrdiff_t drvinfo_offset, int null_terminate) {
-    struct {
-            struct ethtool_sset_info hdr;
-            uint32_t buf[1];
-    } sset_info;
-    struct ethtool_drvinfo drvinfo;
     uint32_t len, i;
+    struct ethtool_drvinfo drvinfo;
     struct ethtool_gstrings *strings;
+    struct ethtool_sset_info *sset_info = alloca(sizeof(struct ethtool_sset_info) +
+                                                 sizeof(uint32_t));
 
-    sset_info.hdr.cmd = ETHTOOL_GSSET_INFO;
-    sset_info.hdr.reserved = 0;
-    sset_info.hdr.sset_mask = 1ULL << set_id;
-    if (send_ioctl(ctx, &sset_info) == 0) {
-        const uint32_t *sset_lengths = sset_info.hdr.data;
-        len = sset_info.hdr.sset_mask ? sset_lengths[0] : 0;
+    sset_info->cmd = ETHTOOL_GSSET_INFO;
+    sset_info->reserved = 0;
+    sset_info->sset_mask = 1ULL << set_id;
+    if (send_ioctl(ctx, sset_info) == 0) {
+        len = sset_info->sset_mask ? *(uint32_t*)(sset_info + 1) : 0;
     } else if (errno == EOPNOTSUPP && drvinfo_offset != 0) {
         /* Fallback for old kernel versions */
         drvinfo.cmd = ETHTOOL_GDRVINFO;
@@ -78,6 +75,7 @@ int ioctl_init(cmd_context_t *ctx, const char *ndev_name)
     if (ctx->fd < 0) {
         ucs_debug("ioctl_init: socket failed.");
     }
+
     return 0;
 }
 
@@ -114,22 +112,23 @@ ucs_status_t stats_alloc_handle(const char *ndev_name, ethtool_stats_handle_t* s
         free(stats_handle->super.strings);
         return UCS_ERR_NO_MEMORY;
     }
+
     return UCS_OK;
 }
 
-
 ucs_status_t stats_query_device(ethtool_stats_handle_t* stats_handle, void *filter) {
-    stats_handle->super.stats->cmd = ETHTOOL_GSTATS;
+    stats_handle->super.stats->cmd     = ETHTOOL_GSTATS;
     stats_handle->super.stats->n_stats = stats_handle->super.n_stats;
-    int err = send_ioctl(&stats_handle->super.ctx, stats_handle->super.stats);
-    if (err < 0) {
+
+    if (send_ioctl(&stats_handle->super.ctx, stats_handle->super.stats) < 0) {
         ucs_debug(" read_mlx5_counters: Cannot get stats information!");
         return UCS_ERR_IO_ERROR;
     }
+
     return UCS_OK;
 }
 
-ucs_status_t stats_read_counters(ethtool_stats_handle_t* stats_handle) {
+void stats_read_counters(ethtool_stats_handle_t* stats_handle) {
     int i;
     ucs_debug("MLX5 statistics:");
     for (i = 0; i < stats_handle->super.n_stats; i++) {
@@ -138,15 +137,9 @@ ucs_status_t stats_read_counters(ethtool_stats_handle_t* stats_handle) {
                     &stats_handle->super.strings->data[i * ETH_GSTRING_LEN],
                     stats_handle->super.stats->data[i]);
     }
-    return UCS_OK;
 }
 
-ucs_status_t stats_release_handle(ethtool_stats_handle_t* stats_handle) {
-    if (stats_handle) {
-        if (stats_handle->super.strings)
-            free(stats_handle->super.strings);
-        if (stats_handle->super.stats)
-            free(stats_handle->super.stats);
-    }
-    return UCS_OK;
+void stats_release_handle(ethtool_stats_handle_t* stats_handle) {
+    free(stats_handle->super.strings);
+    free(stats_handle->super.stats);
 }

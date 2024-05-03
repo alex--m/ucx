@@ -107,7 +107,7 @@ enum {
                                                          initialized yet. */
     UCP_RECV_DESC_FLAG_RELEASED         = UCS_BIT(10),/* Indicates that the descriptor was
                                                          released and cannot be used. */
-    UCP_RECV_DESC_FLAG_UCT_DESC_SHARED  = UCS_BIT(11)  /* Descriptor shared with others */
+    UCP_RECV_DESC_FLAG_UCT_STRIDED      = UCS_BIT(11)  /* Stored data is strided */
 };
 
 

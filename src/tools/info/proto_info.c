@@ -10,7 +10,9 @@
 
 #include "ucx_info.h"
 
-#include <ucp/api/ucp.h>
+#include <ucf/base/ucf_context.h>
+#include <ucg/base/ucg_context.h>
+#include <ucb/base/ucb_context.h>
 #include <ucs/time/time.h>
 #include <ucs/sys/string.h>
 #include <ucs/debug/assert.h>
@@ -18,10 +20,6 @@
 #include <dirent.h>
 #include <string.h>
 #include <errno.h>
-
-#if ENABLE_UCG
-#include <ucg/base/ucg_context.h>
-#endif
 
 
 typedef struct {
@@ -333,7 +331,6 @@ out:
     return status;
 }
 
-#if ENABLE_UCG
 static int datatype_test_converter(void *datatype, ucp_datatype_t *ucp_datatype)
 {
     *ucp_datatype = ucp_dt_make_contig((uintptr_t)datatype);
@@ -353,61 +350,54 @@ static int datatype_test_dt_is_fp(void *datatype)
 }
 
 /* Check if the reduction operation is a summation (e.g. MPI_SUM) */
-static int datatype_test_op_is_sum(void *reduce_op)
+static int datatype_test_op_get_operator(void *reduce_op,
+                                         enum ucg_operator *operator,
+                                         int *want_location, int *is_commutative)
 {
     return 1;
 }
-
-/* Check if the reduction operation is indexed (e.g. MPI_MINLOC) */
-static int datatype_test_op_is_loc(void *reduce_op)
-{
-    return 0;
-}
-
-/* Check if the reduction operation is commutative (predefined MPI ops are) */
-static int datatype_test_op_is_com(void *reduce_op)
-{
-    return 1;
-}
-#endif
 
 ucs_status_t
-print_ucp_info(int print_opts, ucs_config_print_flags_t print_flags,
+print_ucx_info(int print_opts, ucs_config_print_flags_t print_flags,
                uint64_t ctx_features, const ucp_ep_params_t *base_ep_params,
                size_t estimated_num_eps, size_t estimated_num_ppn,
                unsigned dev_type_bitmap, process_placement_t proc_placement,
-               const char *mem_spec, const char *ip_addr, sa_family_t af
-#if ENABLE_UCG
-               ,const char *planner_name,
+               const char *mem_spec, const char *ip_addr, sa_family_t af,
                ucg_group_member_index_t root_index,
                ucg_group_member_index_t my_index,
-               const char *collective_type_name,
-               size_t dtype_count,
-               ucg_group_member_index_t peer_count[UCG_GROUP_MEMBER_DISTANCE_UNKNOWN]
-#endif
-               )
+               const char *collective_type_name, size_t dtype_count,
+               ucg_group_member_index_t peer_count[4])
 {
     ucp_worker_h peer_worker = NULL;
     ucp_config_t *ucp_config;
+    ucf_config_t *ucf_config;
     ucs_status_t status;
-    ucp_context_h context;
     ucp_worker_h worker;
     ucp_params_t params;
-    ucp_worker_params_t worker_params;
-    resource_usage_t usage;
-
-#if ENABLE_UCG
-    ucg_config_t *ucg_config;
+    ucb_params_t ucb_params;
     ucg_params_t ucg_params;
+    ucf_params_t ucf_params;
+    ucp_worker_params_t worker_params;
+    ucp_context_h ucp_context;
+    ucb_context_h ucb_context;
+    ucg_context_h ucg_context;
+    ucf_context_h ucf_context;
+    resource_usage_t usage;
+    ucg_group_h group;
 
-    status     = ucg_config_read(NULL, NULL, &ucg_config);
-    ucp_config = (ucp_config_t*)ucg_config;
-#else
-    status = ucp_config_read(NULL, NULL, &ucp_config);
-#endif
+    if (ctx_features & UCP_FEATURE_GROUPS) {
+        status = ucf_config_read(NULL, NULL, &ucf_config);
+        ucp_config = (ucp_config_t*)ucf_config->super.parent->parent->parent;
+    } else {
+        status = ucp_config_read(NULL, NULL, &ucp_config);
+    }
     if (status != UCS_OK) {
         goto out;
     }
+
+    /**
+     * UCP
+     */
 
     memset(&params, 0, sizeof(params));
     params.field_mask        = UCP_PARAM_FIELD_FEATURES |
@@ -431,8 +421,17 @@ print_ucp_info(int print_opts, ucs_config_print_flags_t print_flags,
         ucp_config_modify(ucp_config, "NET_DEVICES", "");
     }
 
-#if ENABLE_UCG
-    ucg_params.super             = &params;
+    /**
+     * UCB
+     */
+
+    ucb_params.super             = &params;
+    ucb_params.field_mask        = 0;
+
+    /**
+     * UCG
+     */
+    ucg_params.super             = &ucb_params;
     ucg_params.field_mask        = UCG_PARAM_FIELD_ADDRESS_CB  |
                                    UCG_PARAM_FIELD_DATATYPE_CB |
                                    UCG_PARAM_FIELD_REDUCE_OP_CB;
@@ -443,29 +442,37 @@ print_ucp_info(int print_opts, ucs_config_print_flags_t print_flags,
     ucg_params.datatype.convert_f           = datatype_test_converter;
     ucg_params.datatype.is_integer_f        = datatype_test_dt_is_int;
     ucg_params.datatype.is_floating_point_f = datatype_test_dt_is_fp;
-    ucg_params.reduce_op.is_sum_f           = datatype_test_op_is_sum;
-    ucg_params.reduce_op.is_loc_expected_f  = datatype_test_op_is_loc;
-    ucg_params.reduce_op.is_commutative_f   = datatype_test_op_is_com;
+    ucg_params.reduce_op.get_operator_f     = datatype_test_op_get_operator;
 
-    ucg_context_h ucg_context;
+    /**
+     * UCF
+     */
+    ucf_params.super      = &ucg_params;
+    ucf_params.field_mask = 0;
+
     if (ctx_features & UCP_FEATURE_GROUPS) {
-        status  = ucg_init(&ucg_params, ucg_config, &ucg_context);
-        context = &ucg_context->ucp_ctx;
-        /* It isn't ideal, but the idea is NOT to mix UCG and UCP APIs anyway */
-    } else
-#endif
-    status = ucp_init(&params, ucp_config, &context);
+        status      = ucf_init(&ucf_params, ucf_config, &ucf_context);
+        ucg_context = &ucf_context->ucg_ctx;
+        ucb_context = &ucg_context->ucb_ctx;
+        ucp_context = &ucb_context->ucp_ctx;
+    } else {
+        status      = ucp_init(&params, ucp_config, &ucp_context);
+        ucf_context = NULL;
+        ucg_context = NULL;
+        ucb_context = NULL;
+    }
+
     if (status != UCS_OK) {
         printf("<Failed to create context>\n");
         goto out_release_config;
     }
 
     if ((print_opts & PRINT_MEM_MAP) && (mem_spec != NULL)) {
-        ucp_mem_print_info(mem_spec, context, stdout);
+        ucp_mem_print_info(mem_spec, ucp_context, stdout);
     }
 
     if (print_opts & PRINT_UCP_CONTEXT) {
-        ucp_context_print_info(context, stdout);
+        ucp_context_print_info(ucp_context, stdout);
         print_resource_usage(&usage, "UCP context");
     }
 
@@ -478,7 +485,7 @@ print_ucp_info(int print_opts, ucs_config_print_flags_t print_flags,
 
     get_resource_usage(&usage);
 
-    status = ucp_worker_create(context, &worker_params, &worker);
+    status = ucp_worker_create(ucp_context, &worker_params, &worker);
     if (status != UCS_OK) {
         printf("<Failed to create UCP worker>\n");
         goto out_cleanup_context;
@@ -489,23 +496,23 @@ print_ucp_info(int print_opts, ucs_config_print_flags_t print_flags,
         print_resource_usage(&usage, "UCP worker");
     }
 
-#if ENABLE_UCG
     if (print_opts & PRINT_UCG) {
         /* create a group with the generated parameters */
         enum ucg_group_member_distance distance = UCG_GROUP_MEMBER_DISTANCE_NONE;
         ucg_group_params_t group_params = {
-                .field_mask     = UCG_GROUP_PARAM_FIELD_MEMBER_COUNT |
+                .field_mask     = UCG_GROUP_PARAM_FIELD_UCP_WORKER |
+                                  UCG_GROUP_PARAM_FIELD_MEMBER_COUNT |
                                   UCG_GROUP_PARAM_FIELD_MEMBER_INDEX |
                                   UCG_GROUP_PARAM_FIELD_CB_CONTEXT   |
                                   UCG_GROUP_PARAM_FIELD_DISTANCES,
                 .distance_type  = UCG_GROUP_DISTANCE_TYPE_PLACEMENT,
                 .distance_array = &distance,
+                .worker         = worker,
                 .member_count   = 1,
                 .cb_context     = NULL
         };
 
-        ucg_group_h group;
-        status = ucg_group_create(worker, &group_params, &group);
+        status = ucg_group_create(&group_params, &group);
         if (status != UCS_OK) {
             printf("<Failed to create UCG group>\n");
             goto out_worker_destroy;
@@ -519,15 +526,15 @@ print_ucp_info(int print_opts, ucs_config_print_flags_t print_flags,
         ucg_group_member_index_t dist_len;
         enum ucg_group_member_distance* dist;
         if (UCS_OK == gen_ucg_topology(my_index, peer_count, &dist, &dist_len)) {
-            print_ucg_topology(planner_name, worker, root_index, my_index,
-                    collective_type_name, dtype_count, dist, dist_len, 1);
+            print_ucg_topology(worker, root_index, my_index, collective_type_name,
+                               dtype_count, dist, dist_len, 1);
+            ucs_free(dist);
         }
     }
-#endif
 
     if (print_opts & PRINT_UCP_EP) {
         if (proc_placement != PROCESS_PLACEMENT_SELF) {
-            status = ucp_worker_create(context, &worker_params, &peer_worker);
+            status = ucp_worker_create(ucp_context, &worker_params, &peer_worker);
             if (status != UCS_OK) {
                 printf("<Failed to create peer UCP worker>\n");
                 goto out_worker_destroy;
@@ -547,20 +554,19 @@ out_worker_destroy:
     ucp_worker_destroy(worker);
 
 out_cleanup_context:
-#if ENABLE_UCG
     if (ctx_features & UCP_FEATURE_GROUPS) {
-        ucg_cleanup(ucg_context);
-    } else
-#endif
-    ucp_cleanup(context);
+        ucf_cleanup(ucf_context);
+    } else {
+        ucp_cleanup(ucp_context);
+    }
 
 out_release_config:
-#if ENABLE_UCG
     if (ctx_features & UCP_FEATURE_GROUPS) {
-        ucg_config_release(ucg_config);
-    } else
-#endif
-    ucp_config_release(ucp_config);
+        ucf_config_release(ucf_config);
+    } else {
+        ucp_config_release(ucp_config);
+    }
+
 out:
     return status;
 }

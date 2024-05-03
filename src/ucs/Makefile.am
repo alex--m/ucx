@@ -59,7 +59,7 @@ nobase_dist_libucs_la_HEADERS = \
 	pmodule/cache.h \
 	pmodule/component.h \
 	pmodule/framework.h \
-	pmodule/object.h \
+	pmodule/target.h \
 	profile/profile_defs.h \
 	profile/profile_off.h \
 	profile/profile_on.h \
@@ -106,6 +106,7 @@ noinst_HEADERS = \
 	datastruct/dynamic_bitmap.h \
 	datastruct/frag_list.h \
         datastruct/lru.h \
+	datastruct/int_array.h \
 	datastruct/mpmc.h \
 	datastruct/mpool.inl \
 	datastruct/mpool_set.inl \
@@ -199,7 +200,7 @@ libucs_la_SOURCES = \
 	pmodule/cache.c \
 	pmodule/component.c \
 	pmodule/framework.c \
-	pmodule/object.c \
+	pmodule/target.c \
 	profile/profile.c \
 	stats/stats.c \
 	sys/event_set.c \

@@ -326,7 +326,7 @@ ucp_tag_recv_request_process_rdesc(ucp_request_t *req, ucp_recv_desc_t *rdesc,
         status = ucp_request_process_recv_data(req, data, recv_len, offset, 0,
                                                0);
     }
-    ucp_recv_desc_release(rdesc, NULL);
+    ucp_recv_desc_release(rdesc);
 
     return status;
 }
@@ -400,7 +400,7 @@ ucp_tag_offload_release_first(ucp_offload_first_desc_t *first_hdr)
     /* Release the first fragment rdesc. Since matchq is stored in its private
      * data, it is kept until all fragments arrive and processed.
      */
-    ucp_recv_desc_release(first_rdesc, NULL);
+    ucp_recv_desc_release(first_rdesc);
 }
 
 static UCS_F_ALWAYS_INLINE void

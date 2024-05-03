@@ -74,12 +74,12 @@ uct_ud_iface_cep_get_conn_sn(uct_ud_iface_t *iface,
 {
     void *peer_address = ucs_alloca(iface->conn_match_ctx.address_length);
     ucs_status_t status;
-    
+
     status = uct_ud_iface_cep_get_peer_address(iface, ib_addr, if_addr,
                                                path_index, peer_address);
     if (status != UCS_OK) {
         return status;
-    } 
+    }
 
     *conn_sn_p = ucs_conn_match_get_next_sn(&iface->conn_match_ctx,
                                             peer_address);

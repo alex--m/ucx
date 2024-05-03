@@ -96,11 +96,14 @@ char *ucs_strndup(const char *src, size_t n, const char *name);
 int ucs_posix_memalign_realloc(void **ptr, size_t boundary, size_t size,
                                const char *name);
 
-#define UCS_ALLOC_CHECK(size, name) ({ \
-    void* ptr = ucs_malloc(size, name); \
+#define UCS_ALLOC_CHECK(_size, _name) ({ \
+    void* ptr = ucs_malloc((_size), (_name)); \
     if (ptr == 0) return UCS_ERR_NO_MEMORY; \
     ptr; \
 })
+
+#define UCS_ALLOC_TYPE_CHECK(_type) \
+    UCS_ALLOC_CHECK(sizeof(_type), #_type)
 
 END_C_DECLS
 

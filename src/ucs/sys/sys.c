@@ -727,6 +727,21 @@ size_t ucs_get_shmmax()
     return size;
 }
 
+#define UCS_PROC_SYS_SHMMNI_FILE "/proc/sys/kernel/shmmni"
+uint64_t ucs_get_shmmni()
+{
+    ucs_status_t status;
+    uint64_t count;
+
+    status = ucs_read_file_number(&count, 0, UCS_PROC_SYS_SHMMNI_FILE);
+    if (status != UCS_OK) {
+        ucs_warn("failed to read %s:%m", UCS_PROC_SYS_SHMMNI_FILE);
+        return 0;
+    }
+
+    return count;
+}
+
 static void ucs_sysv_shmget_error_check_ENOSPC(size_t alloc_size,
                                                const struct shminfo *ipc_info,
                                                char *buf, size_t max)

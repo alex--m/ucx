@@ -1272,7 +1272,10 @@ ucp_ep_purge_lanes(ucp_ep_h ep, uct_pending_purge_callback_t purge_cb,
 
     for (lane = 0; lane < ucp_ep_num_lanes(ep); ++lane) {
         uct_ep = ucp_ep_get_lane(ep, lane);
-        if ((lane == ucp_ep_get_cm_lane(ep)) || (uct_ep == NULL)) {
+        if ((lane == ucp_ep_get_cm_lane(ep))     ||
+            (lane == ucp_ep_get_bcast_lane(ep))  ||
+            (lane == ucp_ep_get_incast_lane(ep)) ||
+            (uct_ep == NULL)) {
             continue;
         }
 
@@ -1299,7 +1302,10 @@ static void ucp_ep_check_lanes(ucp_ep_h ep)
 
     for (lane = 0; lane < ucp_ep_num_lanes(ep); ++lane) {
         uct_ep = ucp_ep_get_lane(ep, lane);
-        if ((uct_ep != NULL) && ucp_is_uct_ep_failed(uct_ep)) {
+        if ((uct_ep != NULL) &&
+            (lane != ucp_ep_get_bcast_lane(ep))  &&
+            (lane != ucp_ep_get_incast_lane(ep)) &&
+            ucp_is_uct_ep_failed(uct_ep)) {
             num_failed_tl_ep++;
         }
     }
@@ -1574,7 +1580,9 @@ void ucp_ep_cleanup_lanes(ucp_ep_h ep)
 
     for (lane = 0; lane < ucp_ep_num_lanes(ep); ++lane) {
         uct_ep = uct_eps[lane];
-        if (uct_ep == NULL) {
+        if ((uct_ep == NULL) ||
+            (lane == ucp_ep_get_bcast_lane(ep)) ||
+            (lane == ucp_ep_get_incast_lane(ep))) {
             continue;
         }
 

@@ -387,6 +387,10 @@ ucs_status_t ucp_worker_add_resource_ifaces(ucp_worker_h worker,
                                             unsigned *iface_index_base_p,
                                             ucp_tl_bitmap_t *coll_tl_bitmap_p);
 
+void ucp_worker_del_resource_ifaces(ucp_worker_h worker,
+                                    unsigned iface_index_base,
+                                    ucp_tl_bitmap_t coll_tl_bitmap);
+
 ucs_status_t ucp_worker_iface_open(ucp_worker_h worker, ucp_rsc_index_t tl_id,
                                    uct_iface_params_t *coll_params,
                                    ucp_worker_iface_t **wiface);

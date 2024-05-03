@@ -34,13 +34,13 @@ BEGIN_C_DECLS
 ucs_status_t stats_alloc_handle(const char *ndev_name, ethtool_stats_handle_t* stats_handle);
 
 /* release the memory of stats_handle of the device  */
-ucs_status_t stats_release_handle(ethtool_stats_handle_t* stats_handle);
+void stats_release_handle(ethtool_stats_handle_t* stats_handle);
 
 /* query device counters and store them in stats_handle  */
 ucs_status_t stats_query_device(ethtool_stats_handle_t* stats_handle, void *filter);
 
 /* print the counters stored in stats_handle */
-ucs_status_t stats_read_counters(ethtool_stats_handle_t* stats_handle);
+void stats_read_counters(ethtool_stats_handle_t* stats_handle);
 
 END_C_DECLS
 

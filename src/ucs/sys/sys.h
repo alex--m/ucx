@@ -489,6 +489,13 @@ size_t ucs_get_shmmax();
 
 
 /**
+ * Get shmmni count from /proc/sys/kernel/shmmni.
+ *
+ * @return shmmni count
+ */
+uint64_t ucs_get_shmmni();
+
+/**
  * Return effective capabilities of the current thread.
  *
  * @param effective  Filled with thread's effective capabilities.

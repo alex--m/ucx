@@ -8,8 +8,8 @@
 #define UCF_H_
 
 #include <ucf/api/ucf_def.h>
+#include <ucf/api/ucf_version.h>
 #include <ucg/api/ucg.h>
-#include <ucs/pmodule/framework.h>
 
 BEGIN_C_DECLS
 
@@ -63,8 +63,10 @@ BEGIN_C_DECLS
  * present. It is used to enable backward compatibility support.
  */
 enum ucf_params_field {
-    UCF_PARAM_FIELD_COMPLETION_CB = UCS_BIT(1), /**< Actions upon completion */
-    UCF_PARAM_FIELD_EXTERNAL_FS   = UCS_BIT(2)  /**< External filesystem to use */
+    UCF_PARAM_FIELD_NAME             = UCS_BIT(0), /**< Name for this context */
+    UCF_PARAM_FIELD_CONTEXT_HEADROOM = UCS_BIT(1), /**< Extra space in context */
+    UCF_PARAM_FIELD_COMPLETION_CB    = UCS_BIT(2), /**< Actions upon completion */
+    UCF_PARAM_FIELD_EXTERNAL_FS      = UCS_BIT(3)  /**< External filesystem to use */
 };
 
 enum ucf_external_fs_field {
@@ -79,10 +81,10 @@ typedef struct ucf_external_fs {
 
 /*
     typedef ssize_t (*mca_fbtl_base_module_ipreadv_fn_t)
-        (struct ompio_file_t *file,
+        (struct ompiop_file_t *file,
          ucf_request_t *request);
     typedef ssize_t (*mca_fbtl_base_module_ipwritev_fn_t)
-        (struct ompio_file_t *file,
+        (struct ompiop_file_t *file,
          ucf_request_t *request);
 */
     /*
@@ -105,30 +107,41 @@ typedef struct ucf_external_fs {
  * initialization by @ref ucf_init .
  */
 typedef struct ucf_params {
-    const ucs_pmodule_framework_params_t *super;
-    const ucg_params_t                   *ucg;
+    ucg_params_t *super; /** Pointer is better suited for ABI compatibility */
 
     /**
      * Mask of valid fields in this structure, using bits from
-     * @ref ucf_params_field. Fields not specified in this mask will be ignored.
+     * @ref ucg_params_field. Fields not specified in this mask will be ignored.
      * Provides ABI compatibility with respect to adding new fields.
      */
     uint64_t field_mask;
 
+    /**
+     * Tracing and analysis tools can identify the context using this name.
+     * To retrieve the context's name, use @ref ucg_context_query, as the name
+     * you supply may be changed by UCX under some circumstances, e.g. a name
+     * conflict. This field is only assigned if you set
+     * @ref UCG_PARAM_FIELD_NAME in the field mask. If not, then a default
+     * unique name will be created for you.
+     */
+    const char *name;
+
+    /** Head-room before the allocated context pointer, for extensions */
+    size_t context_headroom;
+
     /* Requested action upon completion (for non-blocking calls) */
     struct {
-        /* Callback function to invoke upon completion of a collective call */
-        void (*coll_comp_cb_f)(void *req, ucs_status_t status);
+        /* Callback function to call upon immediate completion (within call) */
+        void (*blocking_comp_cb_f)(void *req, ucs_status_t status);
 
-        /* offset where to set completion (ignored unless coll_comp_cb is NULL) */
-        size_t comp_flag_offset;
+        /* Callback function to call upon async. completion (during progress) */
+        void (*nonblocking_comp_cb_f)(void *req, ucs_status_t status);
 
-        /* offset where to write status (ignored unless coll_comp_cb is NULL) */
-        size_t comp_status_offset;
+        /* Callback function to call upon async. completion of persistent ops */
+        void (*persistent_nb_comp_cb_f)(void *req, ucs_status_t status);
     } completion;
 
     ucf_external_fs_t ext_fs;
-
 } ucf_params_t;
 
 /**
@@ -167,9 +180,11 @@ enum ucf_file_access_type {
  * present. It is used to enable backward compatibility support.
  */
 enum ucf_file_params_field {
-    UCF_FILE_PARAM_FIELD_ACCESS_TYPE = UCS_BIT(0), /**< File access type */
-    UCF_FILE_PARAM_FIELD_GROUP       = UCS_BIT(1), /**< Unique identifier */
-    UCF_FILE_PARAM_FIELD_GRANULARITY = UCS_BIT(2)  /**< I/O chunk size */
+    UCF_FILE_PARAM_FIELD_NAME        = UCS_BIT(0), /**< "Nickname" (not path) */
+    UCF_FILE_PARAM_FIELD_UCP_WORKER  = UCS_BIT(1), /**< UCP worker object */
+    UCF_FILE_PARAM_FIELD_UCG_GROUP   = UCS_BIT(2), /**< UCG group object */
+    UCF_FILE_PARAM_FIELD_ACCESS_TYPE = UCS_BIT(3), /**< File access type */
+    UCF_FILE_PARAM_FIELD_GRANULARITY = UCS_BIT(4)  /**< I/O chunk size */
 };
 
 /**
@@ -187,15 +202,27 @@ typedef struct ucf_file_params {
      */
     uint64_t field_mask;
 
-    /*
-     * Type of access. // TODO: elaborate
+    /**
+     * Tracing and analysis tools can identify the file using this name. To
+     * retrieve the worker's name, use @ref ucf_file_query, as the name you
+     * supply may be changed by UCX under some circumstances, e.g. a name
+     * conflict. This field is only assigned if you set
+     * @ref UCF_FILE_PARAM_FIELD_NAME in the field mask. If not, then a
+     * default unique name will be created for you.
      */
-    enum ucf_file_access_type access_type;
+    const char *name;
+
+    ucp_worker_h worker;
 
     /*
      * Group of peers accessing this file. // TODO: elaborate
      */
     ucg_group_h group;
+
+    /*
+     * Type of access. // TODO: elaborate
+     */
+    enum ucf_file_access_type access_type;
 
     /*
      * Used if access is always a multiple of this size. // TODO: elaborate
@@ -210,12 +237,14 @@ typedef struct ucf_file_params {
  *
  * The enumeration ...
  */
-typedef enum ucf_io_type {
+typedef enum ucf_iop_type {
     UCF_IO_READ,
     UCF_IO_WRITE,
     UCF_IO_APPEND,
-    UCF_IO_PREFETCH
-} ucf_io_type_t;
+    UCF_IO_PREFETCH,
+
+    UCF_IO_LAST_TYPE
+} ucf_iop_type_t;
 
 /**
  * @ingroup UCF_FILE
@@ -226,11 +255,11 @@ typedef enum ucf_io_type {
  * to performance, as well as it being contiguous, because its entire contents
  * are accessed during run-time.
  */
-typedef struct ucf_io_params {
-    enum ucf_io_type type;
+typedef struct ucf_iop_params {
+    enum ucf_iop_type type;
     void *buffer;
     size_t count;
-} UCS_S_PACKED UCS_V_ALIGNED(32) ucf_io_params_t;
+} UCS_S_PACKED UCS_V_ALIGNED(32) ucf_iop_params_t;
 
 
 /**
@@ -245,7 +274,6 @@ typedef struct ucf_io_params {
  *
  * @note The group object is allocated within context of the calling thread
  *
- * @param [in] worker      Worker to create a group on top of.
  * @param [in] params      User defined @ref ucf_file_params_t configurations for the
  *                         @ref ucf_group_h "UCF file".
  * @param [out] group_p    A pointer to the group object allocated by the
@@ -253,8 +281,7 @@ typedef struct ucf_io_params {
  *
  * @return Error code as defined by @ref ucs_status_t
  */
-ucs_status_t ucf_file_create(ucp_worker_h worker,
-                             const ucf_file_params_t *params,
+ucs_status_t ucf_file_create(const ucf_file_params_t *params,
                              ucf_file_h *file_p);
 
 
@@ -276,9 +303,6 @@ ucs_status_t ucf_file_create(ucp_worker_h worker,
  * @param [in]  group       Group object to destroy.
  */
 void ucf_file_destroy(ucf_file_h file);
-
-
-
 
 
 struct params {
@@ -305,24 +329,35 @@ ucs_status_t ucf_fkey_unpack(); // unpack a shared file handle
  *
  * @return Error code as defined by @ref ucs_status_t
  */
-ucs_status_t ucf_io_create(ucf_file_h file,
-                           const ucf_io_params_t *params,
-                           ucf_io_h *iop_p);
+ucs_status_t ucf_iop_create(ucf_file_h file,
+                           const ucf_iop_params_t *params,
+                           ucf_iop_h *iop_p);
 
 
 /**
  * @ingroup UCF_COLLECTIVE
- * @brief Starts a collective operation.
+ * @brief Starts an I/O operation.
  *
- * @param [in]  iop          File operation handle.
+ * @param [in]  iop          I/O operation handle.
  * @param [in]  req          Request handle, allocated by the user.
+ * @param [out] progress_f_p Function to use for progress/completion polling.
  *
- * @return UCS_OK           - The collective operation was completed immediately.
- * @return UCS_INPROGRESS   - The collective was not completed and is in progress.
- *
- * @return Error code as defined by @ref ucs_status_t
+ * @return UCS_OK           - The I/O operation was completed immediately.
+ * @return UCS_PTR_IS_ERR(_ptr) - The collective operation failed and an error
+ *                                code indicates the status.
+ * @return otherwise        - The I/O operation has started, and can be
+ *                            completed at any point in time. A request handle
+ *                            is returned to the application in order to track
+ *                            progress of the operation: either through the
+ *                            worker-wide @ref ucp_worker_progress or through
+ *                            the progress function returned (the latter is only
+ *                            recommended for blocking calls). No need to close
+ *                            the returned handle - it'll become useless once
+ *                            the collective is complete (further use of it in
+ *                            progress calls will be useless, yet harmless).
  */
-ucs_status_t ucf_io_start(ucf_io_h iop, void *req);
+ucs_status_ptr_t ucf_iop_start(ucf_iop_h iop, void *req,
+                               ucf_iop_progress_t *progress_f_p);
 
 
 /**
@@ -336,7 +371,7 @@ ucs_status_t ucf_io_start(ucf_io_h iop, void *req);
  *
  * @return A valid function pointer.
  */
-ucf_io_progress_t ucf_request_get_progress(ucf_io_h iop);
+ucf_iop_progress_t ucf_request_get_progress(ucf_iop_h iop);
 
 
 /**
@@ -353,7 +388,7 @@ ucf_io_progress_t ucf_request_get_progress(ucf_io_h iop);
  * called with the @a status argument of the callback set to UCS_OK, and in a
  * case it is canceled the @a status argument is set to UCS_ERR_CANCELED.
  */
-void ucf_request_cancel(ucf_io_h iop);
+void ucf_request_cancel(ucf_iop_h iop);
 
 
 /**
@@ -364,7 +399,7 @@ void ucf_request_cancel(ucf_io_h iop);
  *
  * @return Error code as defined by @ref ucs_status_t
  */
-void ucf_io_destroy(ucf_io_h iop);
+void ucf_iop_destroy(ucf_iop_h iop);
 
 
 /**
@@ -456,10 +491,6 @@ void ucf_config_print(const ucf_config_t *config, FILE *stream,
  */
 ucs_status_t ucf_init_version(unsigned ucf_api_major_version,
                               unsigned ucf_api_minor_version,
-                              unsigned ucg_api_major_version,
-                              unsigned ucg_api_minor_version,
-                              unsigned ucp_api_major_version,
-                              unsigned ucp_api_minor_version,
                               const ucf_params_t *params,
                               const ucf_config_t *config,
                               ucf_context_h *context_p);
@@ -492,9 +523,13 @@ ucs_status_t ucf_init_version(unsigned ucf_api_major_version,
  *
  * @return Error code as defined by @ref ucs_status_t
  */
-ucs_status_t ucf_init(const ucf_params_t *params,
-                      const ucf_config_t *config,
-                      ucf_context_h *context_p);
+static inline ucs_status_t ucf_init(const ucf_params_t *params,
+                                    const ucf_config_t *config,
+                                    ucf_context_h *context_p)
+{
+    return ucf_init_version(UCF_API_MAJOR, UCF_API_MINOR, params, config,
+                            context_p);
+}
 
 
 /**
@@ -511,10 +546,9 @@ ucs_status_t ucf_init(const ucf_params_t *params,
  * the application context. After calling this routine, calling any UCF
  * routine without calling @ref ucf_init "UCF initialization routine" is invalid.
  *
- * @param [in] context_p   Handle to @ref ucf_context_h
- *                         "UCF application context".
+ * @param [in] context   Handle to @ref ucf_context_h "UCF application context".
  */
-void ucf_cleanup(ucf_context_h context_p);
+void ucf_cleanup(ucf_context_h context);
 
 
 /**

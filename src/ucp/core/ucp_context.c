@@ -20,12 +20,12 @@
 #include <ucs/datastruct/string_set.h>
 #include <ucs/debug/log.h>
 #include <ucs/debug/debug_int.h>
+#include <ucs/pmodule/framework.h>
 #include <ucs/sys/compiler.h>
 #include <ucs/sys/string.h>
 #include <ucs/vfs/base/vfs_cb.h>
 #include <ucs/vfs/base/vfs_obj.h>
 #include <string.h>
-#include <dlfcn.h>
 
 
 #define UCP_RSC_CONFIG_ALL    "all"
@@ -581,7 +581,7 @@ ucs_config_field_t ucp_config_table[] = {
 
   {NULL}
 };
-UCS_CONFIG_DECLARE_TABLE(ucp_config_table, "UCP context", NULL, ucp_config_t)
+UCS_CONFIG_DECLARE_PUBLIC_TABLE(ucp_config_table, "UCP context", NULL, ucp_config_t)
 
 
 static ucp_tl_alias_t ucp_tl_aliases[] = {
@@ -601,12 +601,42 @@ static ucp_tl_alias_t ucp_tl_aliases[] = {
   { "ugni",  { "ugni_smsg", UCP_TL_AUX("ugni_udt"), "ugni_rdma", NULL } },
   { "cuda",  { "cuda_copy", "cuda_ipc", "gdr_copy", NULL } },
   { "rocm",  { "rocm_copy", "rocm_ipc", "rocm_gdr", NULL } },
-  { "sysv",  { "sysv_p2p", "sysv_batched_bcast", "sysv_batched_incast",
-               "sysv_imbalanced_bcast", "sysv_imbalanced_incast", NULL } },
-  { "posix", { "posix_p2p", "posix_batched_bcast", "posix_batched_incast",
-               "posix_imbalanced_bcast", "posix_imbalanced_incast", NULL } },
-  { "xpmem", { "xpmem_p2p", "xpmem_batched_bcast", "xpmem_batched_incast",
-               "xpmem_imbalanced_bcast", "xpmem_imbalanced_incast", NULL } },
+  { "sysv",  { "sysv_p2p",
+#if HAVE_SM_COLL
+#if HAVE_SM_COLL_EXTRA
+               "sysv_locked_bcast",        "sysv_locked_incast",
+               "sysv_atomic_bcast",        "sysv_atomic_incast",
+               "sysv_hypothetic_bcast",    "sysv_hypothetic_incast",
+               "sysv_counted_slots_bcast", "sysv_counted_slots_incast",
+#endif
+               "sysv_flagged_slots_bcast", "sysv_flagged_slots_incast",
+               "sysv_collaborative_bcast", "sysv_collaborative_incast",
+#endif
+               NULL } },
+  { "posix", { "posix_p2p",
+#if HAVE_SM_COLL
+#if HAVE_SM_COLL_EXTRA
+               "posix_locked_bcast",        "posix_locked_incast",
+               "posix_atomic_bcast",        "posix_atomic_incast",
+               "posix_hypothetic_bcast",    "posix_hypothetic_incast",
+               "posix_counted_slots_bcast", "posix_counted_slots_incast",
+#endif
+               "posix_flagged_slots_bcast", "posix_flagged_slots_incast",
+               "posix_collaborative_bcast", "posix_collaborative_incast",
+#endif
+               NULL } },
+  { "xpmem", { "xpmem_p2p",
+#if HAVE_SM_COLL
+#if HAVE_SM_COLL_EXTRA
+               "xpmem_locked_bcast",        "xpmem_locked_incast",
+               "xpmem_atomic_bcast",        "xpmem_atomic_incast",
+               "xpmem_hypothetic_bcast",    "xpmem_hypothetic_incast",
+               "xpmem_counted_slots_bcast", "xpmem_counted_slots_incast",
+#endif
+               "xpmem_flagged_slots_bcast", "xpmem_flagged_slots_incast",
+               "xpmem_collaborative_bcast", "xpmem_collaborative_incast",
+#endif
+               NULL } },
   { NULL }
 };
 
@@ -648,23 +678,23 @@ ucs_status_t ucp_config_read(const char *env_prefix, const char *filename,
         full_prefix_len += env_prefix_len + 1;
     }
 
-    config->env_prefix = ucs_malloc(full_prefix_len, "ucp config");
-    if (config->env_prefix == NULL) {
+    config->super.env_prefix = ucs_malloc(full_prefix_len, "ucp config");
+    if (config->super.env_prefix == NULL) {
         status = UCS_ERR_NO_MEMORY;
         goto err_free_config;
     }
 
     if (env_prefix_len != 0) {
-        ucs_snprintf_zero(config->env_prefix, full_prefix_len, "%s_%s",
+        ucs_snprintf_zero(config->super.env_prefix, full_prefix_len, "%s_%s",
                           env_prefix, UCS_DEFAULT_ENV_PREFIX);
     } else {
-        ucs_snprintf_zero(config->env_prefix, full_prefix_len, "%s",
+        ucs_snprintf_zero(config->super.env_prefix, full_prefix_len, "%s",
                           UCS_DEFAULT_ENV_PREFIX);
     }
 
     status = ucs_config_parser_fill_opts(config,
                                          UCS_CONFIG_GET_TABLE(ucp_config_table),
-                                         config->env_prefix, 0);
+                                         config->super.env_prefix, 0);
     if (status != UCS_OK) {
         goto err_free_prefix;
     }
@@ -675,7 +705,7 @@ ucs_status_t ucp_config_read(const char *env_prefix, const char *filename,
     return UCS_OK;
 
 err_free_prefix:
-    ucs_free(config->env_prefix);
+    ucs_free(config->super.env_prefix);
 err_free_config:
     ucs_free(config);
 err:
@@ -732,7 +762,7 @@ void ucp_config_release(ucp_config_t *config)
 {
     ucp_cached_key_list_release(&config->cached_key_list);
     ucs_config_parser_release_opts(config, ucp_config_table);
-    ucs_free(config->env_prefix);
+    ucs_free(config->super.env_prefix);
     ucs_free(config);
 }
 
@@ -1790,9 +1820,11 @@ static ucs_status_t ucp_fill_resources(ucp_context_h context,
                                    &avail_devices[dev_type]);
         }
 
-        ucp_get_aliases_set(&avail_tls);
-        ucp_report_unavailable(&config->tls.array, tl_cfg_mask, "", "transport",
-                               &avail_tls);
+        if (config->tls.mode != UCS_CONFIG_ALLOW_LIST_NEGATE) {
+            ucp_get_aliases_set(&avail_tls);
+            ucp_report_unavailable(&config->tls.array, tl_cfg_mask, "",
+                                   "transport", &avail_tls);
+        }
     }
 
     /* Validate context resources */
@@ -1977,7 +2009,8 @@ static ucs_status_t ucp_fill_config(ucp_context_h context,
     }
 
     /* Save environment prefix to later notify user for unused variables */
-    context->config.env_prefix = ucs_strdup(config->env_prefix, "ucp config");
+    context->config.env_prefix = ucs_strdup(config->super.env_prefix,
+                                            "ucp config");
     if (context->config.env_prefix == NULL) {
         status = UCS_ERR_NO_MEMORY;
         goto err_free_config_ext;
@@ -2138,58 +2171,20 @@ static void ucp_context_create_vfs(ucp_context_h context)
                             "memory_address");
 }
 
-static void
-ucp_version_check(unsigned api_major_version, unsigned api_minor_version)
-{
-    UCS_STRING_BUFFER_ONSTACK(strb, 256);
-    unsigned major_version, minor_version, release_number;
-    ucs_log_level_t log_level;
-    Dl_info dl_info;
-    int ret;
-
-    ucp_get_version(&major_version, &minor_version, &release_number);
-
-    if ((major_version == api_major_version) &&
-        (minor_version >= api_minor_version)) {
-        /* API version is compatible: same major, same or higher minor */
-        ucs_string_buffer_appendf(&strb, "Version %s",
-                                  ucp_get_version_string());
-        log_level = UCS_LOG_LEVEL_INFO;
-    } else {
-        ucs_string_buffer_appendf(
-                &strb,
-                "UCP API version is incompatible: required >= %d.%d, actual %s",
-                api_major_version, api_minor_version, ucp_get_version_string());
-        log_level = UCS_LOG_LEVEL_WARN;
-    }
-
-    if (ucs_log_is_enabled(log_level)) {
-        ret = dladdr(ucp_init_version, &dl_info);
-        if (ret != 0) {
-            ucs_string_buffer_appendf(&strb, " (loaded from %s)",
-                                      dl_info.dli_fname);
-        }
-        ucs_log(log_level, "%s", ucs_string_buffer_cstr(&strb));
-    }
-}
+static void ucp_context_copy_used_params(void *out, const ucp_params_t *in) {}
 
 ucs_status_t ucp_init_version(unsigned api_major_version, unsigned api_minor_version,
                               const ucp_params_t *params, const ucp_config_t *config,
                               ucp_context_h *context_p)
 {
-    ucp_config_t *dfl_config = NULL;
     ucp_context_t *context;
-    ucs_status_t status;
     size_t context_size, headroom_size;
 
-    ucp_version_check(api_major_version, api_minor_version);
-
-    if (config == NULL) {
-        status = ucp_config_read(NULL, NULL, &dfl_config);
-        if (status != UCS_OK) {
-            goto err;
-        }
-        config = dfl_config;
+    UCS_PMODULE_FRAMEWORK_INIT_VERSION_PROLOG(UCP, ucp, status, config, params,
+                                              api_major_version,
+                                              api_minor_version, NULL);
+    if (status != UCS_OK) {
+        goto err_release_dfl_config;
     }
 
     context_size = sizeof(*context);
@@ -2206,11 +2201,11 @@ ucs_status_t ucp_init_version(unsigned api_major_version, unsigned api_minor_ver
         goto err_release_dfl_config;
     }
 
-    ucs_list_head_init(&context->cached_key_list);
-
     /* Move the context pointer forward (leave the head-room uninitialized) */
     context           = UCS_PTR_BYTE_OFFSET(context, headroom_size);
     context->headroom = headroom_size;
+
+    ucs_list_head_init(&context->cached_key_list);
 
     status = ucp_fill_config(context, params, config);
     if (status != UCS_OK) {

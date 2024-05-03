@@ -26,3 +26,31 @@ AC_CHECK_DECLS([IPPROTO_TCP, SOL_SOCKET, SO_KEEPALIVE,
                 [#include <netinet/in.h>]])
 AS_IF([test "x$tcp_keepalive_happy" != "xno"],
       [AC_DEFINE([UCT_TCP_EP_KEEPALIVE], 1, [Enable TCP keepalive configuration])]);
+
+#
+# Shared-memory Collectives Support
+#
+AC_ARG_WITH([sm_coll],
+            [AS_HELP_STRING([--with-sm-coll], [Compile with shared-memory collectives support])],
+            [], [with_sm_coll=no])
+
+AC_ARG_WITH([sm_coll_extra],
+            [AS_HELP_STRING([--with-sm-coll-extra], [Compile with extra shared-memory collectives])],
+            [], [with_sm_coll_extra=no])
+
+AS_IF([test "x$with_sm_coll" != xno],
+      [AC_DEFINE([HAVE_SM_COLL], 1, [Shared-memory collectives])
+       AS_IF([test "x$with_sm_coll_extra" != xno],
+             [AC_DEFINE([HAVE_SM_COLL_EXTRA], 1, [Extra shared-memory collectives])])])
+AM_CONDITIONAL([HAVE_SM_COLL], [test "x$with_sm_coll" != xno])
+
+#
+# UD Multicast Collectives Support
+#
+AC_ARG_WITH([mcast_coll],
+            [AS_HELP_STRING([--with-mcast-coll], [Compile with UD multicast collectives support])],
+            [], [with_mcast_coll=no])
+
+AS_IF([test "x$with_mcast_coll" != xno],
+      [AC_DEFINE([HAVE_MCAST_COLL], 1, [UD Multicast collectives])])
+AM_CONDITIONAL([HAVE_MCAST_COLL], [test "x$with_mcast_coll" != xno])

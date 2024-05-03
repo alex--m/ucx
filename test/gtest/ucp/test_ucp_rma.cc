@@ -206,7 +206,7 @@ protected:
     }
 
 private:
-    mapped_buffer *m_atomic; /* for append operations */
+    // mapped_buffer *m_atomic; /* for append operations */
 
     /* Test variants */
     enum {
@@ -299,9 +299,9 @@ private:
                                void *target_ptr, ucp_rkey_h rkey, void *arg)
     {
         uint64_t *result;
-        ucp_rkey_h atomic_rkey;
         ucp_request_param_t param;
         ucs_memory_type_t atomic_mem_type = UCS_MEMORY_TYPE_HOST;
+        ucp_rkey_h atomic_rkey = NULL;
         param.op_attr_mask = 0;
 
         result = (uint64_t*)UCS_PTR_BYTE_OFFSET(target_ptr, sizeof(void*));

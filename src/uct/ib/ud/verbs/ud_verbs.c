@@ -21,6 +21,7 @@
 #include <uct/ib/base/ib_log.h>
 
 #include <uct/ib/ud/base/ud_iface.h>
+#include <uct/ib/ud/base/ud_mcast.h>
 #include <uct/ib/ud/base/ud_ep.h>
 #include <uct/ib/ud/base/ud_def.h>
 
@@ -29,11 +30,16 @@
 
 #include <uct/ib/ud/base/ud_inl.h>
 
+typedef struct uct_ud_verbs_mcast_iface {
+    uct_ud_verbs_base_iface_t super;
+    uct_ud_mcast_ctx_t mcast;
+} uct_ud_verbs_mcast_iface_t;
+
 static UCS_F_NOINLINE void
-uct_ud_verbs_iface_post_recv_always(uct_ud_verbs_iface_t *iface, int max);
+uct_ud_verbs_iface_post_recv_always(uct_ud_verbs_base_iface_t *iface, int max);
 
 static inline void
-uct_ud_verbs_iface_post_recv(uct_ud_verbs_iface_t *iface);
+uct_ud_verbs_iface_post_recv(uct_ud_verbs_base_iface_t *iface);
 
 static ucs_config_field_t uct_ud_verbs_iface_config_table[] = {
   {"UD_", "", NULL,
@@ -42,11 +48,19 @@ static ucs_config_field_t uct_ud_verbs_iface_config_table[] = {
   {NULL}
 };
 
+#if HAVE_MCAST_COLL
+static ucs_config_field_t uct_ud_verbs_mcast_iface_config_table[] = {
+  {"VERBS_", "", NULL,
+   0, UCS_CONFIG_TYPE_TABLE(uct_ud_verbs_iface_config_table)},
+
+  {NULL}
+};
+#endif
 
 UCS_CLASS_INIT_FUNC(uct_ud_verbs_ep_t, const uct_ep_params_t *params)
 {
-    uct_ud_verbs_iface_t *iface = ucs_derived_of(params->iface,
-                                                 uct_ud_verbs_iface_t);
+    uct_ud_verbs_base_iface_t *iface = ucs_derived_of(params->iface,
+                                                      uct_ud_verbs_base_iface_t);
 
     ucs_trace_func("");
     UCS_CLASS_CALL_SUPER_INIT(uct_ud_ep_t, &iface->super, params);
@@ -59,13 +73,12 @@ static UCS_CLASS_CLEANUP_FUNC(uct_ud_verbs_ep_t)
     ucs_trace_func("");
 }
 
-UCS_CLASS_DEFINE(uct_ud_verbs_ep_t, uct_ud_ep_t);
-static UCS_CLASS_DEFINE_NEW_FUNC(uct_ud_verbs_ep_t, uct_ep_t,
+UCS_CLASS_DEFINE(uct_ud_verbs_ep_t, uct_ud_ep_t);static UCS_CLASS_DEFINE_NEW_FUNC(uct_ud_verbs_ep_t, uct_ep_t,
                                  const uct_ep_params_t *);
 UCS_CLASS_DEFINE_DELETE_FUNC(uct_ud_verbs_ep_t, uct_ep_t);
 
 static inline void
-uct_ud_verbs_post_send(uct_ud_verbs_iface_t *iface, uct_ud_verbs_ep_t *ep,
+uct_ud_verbs_post_send(uct_ud_verbs_base_iface_t *iface, uct_ud_verbs_ep_t *ep,
                        struct ibv_send_wr *wr, unsigned send_flags,
                        unsigned max_log_sge)
 {
@@ -99,7 +112,7 @@ uct_ud_verbs_post_send(uct_ud_verbs_iface_t *iface, uct_ud_verbs_ep_t *ep,
 }
 
 static inline void
-uct_ud_verbs_ep_tx_inlv(uct_ud_verbs_iface_t *iface, uct_ud_verbs_ep_t *ep,
+uct_ud_verbs_ep_tx_inlv(uct_ud_verbs_base_iface_t *iface, uct_ud_verbs_ep_t *ep,
                         const void *buffer, unsigned length)
 {
     iface->tx.sge[1].addr    = (uintptr_t)buffer;
@@ -109,7 +122,7 @@ uct_ud_verbs_ep_tx_inlv(uct_ud_verbs_iface_t *iface, uct_ud_verbs_ep_t *ep,
 }
 
 static inline void
-uct_ud_verbs_ep_tx_skb(uct_ud_verbs_iface_t *iface, uct_ud_verbs_ep_t *ep,
+uct_ud_verbs_ep_tx_skb(uct_ud_verbs_base_iface_t *iface, uct_ud_verbs_ep_t *ep,
                        uct_ud_send_skb_t *skb, unsigned send_flags,
                        unsigned max_log_sge)
 {
@@ -124,9 +137,9 @@ uct_ud_verbs_ep_send_ctl(uct_ud_ep_t *ud_ep, uct_ud_send_skb_t *skb,
                          const uct_ud_iov_t *iov, uint16_t iovcnt, int flags,
                          int max_log_sge)
 {
-    uct_ud_verbs_iface_t *iface = ucs_derived_of(ud_ep->super.super.iface,
-                                                 uct_ud_verbs_iface_t);
-    uct_ud_verbs_ep_t *ep = ucs_derived_of(ud_ep, uct_ud_verbs_ep_t);
+    uct_ud_verbs_ep_t *ep            = ucs_derived_of(ud_ep, uct_ud_verbs_ep_t);
+    uct_ud_verbs_base_iface_t *iface = ucs_derived_of(ud_ep->super.super.iface,
+                                                 uct_ud_verbs_base_iface_t);
     unsigned send_flags;
     uint16_t iov_index;
 
@@ -162,9 +175,9 @@ static
 ucs_status_t uct_ud_verbs_ep_am_short(uct_ep_h tl_ep, uint8_t id, uint64_t hdr,
                                       const void *buffer, unsigned length)
 {
-    uct_ud_verbs_ep_t *ep = ucs_derived_of(tl_ep, uct_ud_verbs_ep_t);
-    uct_ud_verbs_iface_t *iface = ucs_derived_of(tl_ep->iface,
-                                                 uct_ud_verbs_iface_t);
+    uct_ud_verbs_ep_t *ep            = ucs_derived_of(tl_ep, uct_ud_verbs_ep_t);
+    uct_ud_verbs_base_iface_t *iface = ucs_derived_of(tl_ep->iface,
+                                                      uct_ud_verbs_base_iface_t);
     uct_ud_send_skb_t *skb;
     uct_ud_am_short_hdr_t *am_hdr;
     ucs_status_t status;
@@ -199,8 +212,8 @@ ucs_status_t uct_ud_verbs_ep_am_short(uct_ep_h tl_ep, uint8_t id, uint64_t hdr,
 static ucs_status_t uct_ud_verbs_ep_am_short_iov(uct_ep_h tl_ep, uint8_t id,
                                                  const uct_iov_t *iov, size_t iovcnt)
 {
-    uct_ud_verbs_ep_t *ep       = ucs_derived_of(tl_ep, uct_ud_verbs_ep_t);
-    uct_ud_verbs_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_ud_verbs_iface_t);
+    uct_ud_verbs_ep_t *ep            = ucs_derived_of(tl_ep, uct_ud_verbs_ep_t);
+    uct_ud_verbs_base_iface_t *iface = ucs_derived_of(tl_ep->iface, uct_ud_verbs_base_iface_t);
     uct_ud_send_skb_t *skb;
     ucs_status_t status;
 
@@ -236,9 +249,9 @@ static ssize_t uct_ud_verbs_ep_am_bcopy(uct_ep_h tl_ep, uint8_t id,
                                         uct_pack_callback_t pack_cb, void *arg,
                                         unsigned flags)
 {
-    uct_ud_verbs_ep_t *ep = ucs_derived_of(tl_ep, uct_ud_verbs_ep_t);
-    uct_ud_verbs_iface_t *iface = ucs_derived_of(tl_ep->iface,
-                                                 uct_ud_verbs_iface_t);
+    uct_ud_verbs_ep_t *ep            = ucs_derived_of(tl_ep, uct_ud_verbs_ep_t);
+    uct_ud_verbs_base_iface_t *iface = ucs_derived_of(tl_ep->iface,
+                                                      uct_ud_verbs_base_iface_t);
     uct_ud_send_skb_t *skb;
     ucs_status_t status;
     size_t length;
@@ -267,9 +280,9 @@ uct_ud_verbs_ep_am_zcopy(uct_ep_h tl_ep, uint8_t id, const void *header,
                          unsigned header_length, const uct_iov_t *iov,
                          size_t iovcnt, unsigned flags, uct_completion_t *comp)
 {
-    uct_ud_verbs_ep_t *ep = ucs_derived_of(tl_ep, uct_ud_verbs_ep_t);
-    uct_ud_verbs_iface_t *iface = ucs_derived_of(tl_ep->iface,
-                                                 uct_ud_verbs_iface_t);
+    uct_ud_verbs_ep_t *ep            = ucs_derived_of(tl_ep, uct_ud_verbs_ep_t);
+    uct_ud_verbs_base_iface_t *iface = ucs_derived_of(tl_ep->iface,
+                                                      uct_ud_verbs_base_iface_t);
     uct_ud_send_skb_t *skb;
     ucs_status_t status;
 
@@ -313,9 +326,9 @@ ucs_status_t uct_ud_verbs_ep_put_short(uct_ep_h tl_ep,
                                        const void *buffer, unsigned length,
                                        uint64_t remote_addr, uct_rkey_t rkey)
 {
-    uct_ud_verbs_ep_t *ep = ucs_derived_of(tl_ep, uct_ud_verbs_ep_t);
-    uct_ud_verbs_iface_t *iface = ucs_derived_of(tl_ep->iface,
-                                                 uct_ud_verbs_iface_t);
+    uct_ud_verbs_ep_t *ep            = ucs_derived_of(tl_ep, uct_ud_verbs_ep_t);
+    uct_ud_verbs_base_iface_t *iface = ucs_derived_of(tl_ep->iface,
+                                                      uct_ud_verbs_base_iface_t);
     uct_ud_send_skb_t *skb;
     uct_ud_put_hdr_t *put_hdr;
     uct_ud_neth_t *neth;
@@ -353,7 +366,7 @@ ucs_status_t uct_ud_verbs_ep_put_short(uct_ep_h tl_ep,
 
 
 static UCS_F_ALWAYS_INLINE unsigned
-uct_ud_verbs_iface_poll_tx(uct_ud_verbs_iface_t *iface, int is_async,
+uct_ud_verbs_iface_poll_tx(uct_ud_verbs_base_iface_t *iface, int is_async,
                            unsigned *needs_lock_p)
 {
     unsigned num_completed;
@@ -398,7 +411,7 @@ uct_ud_verbs_iface_poll_tx(uct_ud_verbs_iface_t *iface, int is_async,
 }
 
 static UCS_F_ALWAYS_INLINE unsigned
-uct_ud_verbs_iface_poll_rx(uct_ud_verbs_iface_t *iface, int is_async,
+uct_ud_verbs_iface_poll_rx(uct_ud_verbs_base_iface_t *iface, int is_async,
                            unsigned *needs_lock_p)
 {
     unsigned num_wcs = iface->super.super.config.rx_max_poll;
@@ -446,7 +459,7 @@ out:
 
 static unsigned uct_ud_verbs_iface_async_progress(uct_ud_iface_t *ud_iface)
 {
-    uct_ud_verbs_iface_t *iface = ucs_derived_of(ud_iface, uct_ud_verbs_iface_t);
+    uct_ud_verbs_base_iface_t *iface = ucs_derived_of(ud_iface, uct_ud_verbs_base_iface_t);
     unsigned count, n, needs_lock = 0;
 
     count = 0;
@@ -464,7 +477,7 @@ static unsigned uct_ud_verbs_iface_async_progress(uct_ud_iface_t *ud_iface)
 
 static unsigned uct_ud_verbs_iface_progress(uct_iface_h tl_iface)
 {
-    uct_ud_verbs_iface_t *iface = ucs_derived_of(tl_iface, uct_ud_verbs_iface_t);
+    uct_ud_verbs_base_iface_t *iface = ucs_derived_of(tl_iface, uct_ud_verbs_base_iface_t);
     unsigned count, needs_lock = 1;
 
 #if ENABLE_MT
@@ -557,7 +570,7 @@ static void uct_ud_verbs_iface_async_handler(int fd,
 static ucs_status_t
 uct_ud_verbs_iface_query(uct_iface_h tl_iface, uct_iface_attr_t *iface_attr)
 {
-    uct_ud_verbs_iface_t *iface = ucs_derived_of(tl_iface, uct_ud_verbs_iface_t);
+    uct_ud_verbs_base_iface_t *iface = ucs_derived_of(tl_iface, uct_ud_verbs_base_iface_t);
     size_t am_max_hdr;
     ucs_status_t status;
 
@@ -574,6 +587,19 @@ uct_ud_verbs_iface_query(uct_iface_h tl_iface, uct_iface_attr_t *iface_attr)
 
     iface_attr->overhead   = 105e-9; /* Software overhead */
     iface_attr->cap.flags |= UCT_IFACE_FLAG_THREAD_SAFETY;
+
+    return UCS_OK;
+}
+
+static ucs_status_t
+uct_ud_mcast_verbs_iface_query(uct_iface_h tl_iface, uct_iface_attr_t *iface_attr)
+{
+    ucs_status_t status = uct_ud_verbs_iface_query(tl_iface, iface_attr);
+    if (status != UCS_OK) {
+        return status;
+    }
+
+    iface_attr->cap.flags |= UCT_IFACE_FLAG_BCAST;
 
     return UCS_OK;
 }
@@ -664,7 +690,7 @@ static void uct_ud_verbs_iface_destroy_qp(uct_ud_iface_t *ud_iface)
     uct_ib_destroy_qp(ud_iface->qp);
 }
 
-static void UCS_CLASS_DELETE_FUNC_NAME(uct_ud_verbs_iface_t)(uct_iface_t*);
+static void UCS_CLASS_DELETE_FUNC_NAME(uct_ud_verbs_base_iface_t)(uct_iface_t*);
 
 static uct_ud_iface_ops_t uct_ud_verbs_iface_ops = {
     .super = {
@@ -717,7 +743,7 @@ static uct_iface_ops_t uct_ud_verbs_iface_tl_ops = {
     .iface_event_fd_get       = (uct_iface_event_fd_get_func_t)
                                 ucs_empty_function_return_unsupported,
     .iface_event_arm          = uct_ud_verbs_iface_event_arm,
-    .iface_close              = UCS_CLASS_DELETE_FUNC_NAME(uct_ud_verbs_iface_t),
+    .iface_close              = UCS_CLASS_DELETE_FUNC_NAME(uct_ud_verbs_base_iface_t),
     .iface_query              = uct_ud_verbs_iface_query,
     .iface_get_device_address = uct_ib_iface_get_device_address,
     .iface_get_address        = uct_ud_iface_get_address,
@@ -725,7 +751,7 @@ static uct_iface_ops_t uct_ud_verbs_iface_tl_ops = {
 };
 
 static UCS_F_NOINLINE void
-uct_ud_verbs_iface_post_recv_always(uct_ud_verbs_iface_t *iface, int max)
+uct_ud_verbs_iface_post_recv_always(uct_ud_verbs_base_iface_t *iface, int max)
 {
     struct ibv_recv_wr *bad_wr;
     uct_ib_recv_wr_t *wrs;
@@ -748,7 +774,7 @@ uct_ud_verbs_iface_post_recv_always(uct_ud_verbs_iface_t *iface, int max)
 }
 
 static UCS_F_ALWAYS_INLINE void
-uct_ud_verbs_iface_post_recv(uct_ud_verbs_iface_t *iface)
+uct_ud_verbs_iface_post_recv(uct_ud_verbs_base_iface_t *iface)
 {
     unsigned batch = iface->super.super.config.rx_max_batch;
 
@@ -759,7 +785,7 @@ uct_ud_verbs_iface_post_recv(uct_ud_verbs_iface_t *iface)
 }
 
 /* Used for am zcopy only */
-ucs_status_t uct_ud_verbs_qp_max_send_sge(uct_ud_verbs_iface_t *iface,
+ucs_status_t uct_ud_verbs_qp_max_send_sge(uct_ud_verbs_base_iface_t *iface,
                                           size_t *max_send_sge)
 {
     uint32_t max_sge;
@@ -778,8 +804,9 @@ ucs_status_t uct_ud_verbs_qp_max_send_sge(uct_ud_verbs_iface_t *iface,
     return UCS_OK;
 }
 
-static UCS_CLASS_INIT_FUNC(uct_ud_verbs_iface_t, uct_md_h md, uct_worker_h worker,
-                           const uct_iface_params_t *params,
+static UCS_CLASS_INIT_FUNC(uct_ud_verbs_base_iface_t, uct_ud_iface_ops_t *ops,
+                           uct_iface_ops_t *tl_ops, uct_md_h md,
+                           uct_worker_h worker, const uct_iface_params_t *params,
                            const uct_iface_config_t *tl_config)
 {
     uct_ud_iface_config_t *config      = ucs_derived_of(tl_config,
@@ -792,8 +819,8 @@ static UCS_CLASS_INIT_FUNC(uct_ud_verbs_iface_t, uct_md_h md, uct_worker_h worke
     init_attr.cq_len[UCT_IB_DIR_TX] = config->super.tx.queue_len;
     init_attr.cq_len[UCT_IB_DIR_RX] = config->super.rx.queue_len;
 
-    UCS_CLASS_CALL_SUPER_INIT(uct_ud_iface_t, &uct_ud_verbs_iface_ops, &uct_ud_verbs_iface_tl_ops, md,
-                              worker, params, config, &init_attr);
+    UCS_CLASS_CALL_SUPER_INIT(uct_ud_iface_t, ops, tl_ops, md, worker,
+                              params, config, &init_attr);
 
     self->super.super.config.sl = uct_ib_iface_config_select_sl(&config->super);
     uct_ib_iface_set_reverse_sl(&self->super.super, &config->super);
@@ -851,18 +878,90 @@ static UCS_CLASS_INIT_FUNC(uct_ud_verbs_iface_t, uct_md_h md, uct_worker_h worke
     return status;
 }
 
+static UCS_CLASS_CLEANUP_FUNC(uct_ud_verbs_base_iface_t)
+{
+    ucs_trace_func("");
+}
+
+UCS_CLASS_DEFINE(uct_ud_verbs_base_iface_t, uct_ud_iface_t);
+
+static UCS_CLASS_DEFINE_DELETE_FUNC(uct_ud_verbs_base_iface_t, uct_iface_t);
+
+static void UCS_CLASS_DELETE_FUNC_NAME(uct_ud_verbs_iface_t)(uct_iface_t*);
+
+static UCS_CLASS_INIT_FUNC(uct_ud_verbs_iface_t, uct_md_h md, uct_worker_h worker,
+                           const uct_iface_params_t *params,
+                           const uct_iface_config_t *tl_config)
+{
+    ucs_trace_func("");
+
+    uct_ud_verbs_iface_tl_ops.iface_query = uct_ud_mcast_verbs_iface_query;
+    uct_ud_verbs_iface_tl_ops.iface_close =
+        UCS_CLASS_DELETE_FUNC_NAME(uct_ud_verbs_iface_t);
+
+    uct_ud_mcast_init_collective_check(&worker, params, &uct_ud_verbs_iface_tl_ops);
+
+    UCS_CLASS_CALL_SUPER_INIT(uct_ud_verbs_base_iface_t, &uct_ud_verbs_iface_ops,
+                              &uct_ud_verbs_iface_tl_ops, md, worker, params,
+                              tl_config);
+
+    return UCS_OK;
+}
+
 static UCS_CLASS_CLEANUP_FUNC(uct_ud_verbs_iface_t)
 {
     ucs_trace_func("");
 }
 
-UCS_CLASS_DEFINE(uct_ud_verbs_iface_t, uct_ud_iface_t);
+UCS_CLASS_DEFINE(uct_ud_verbs_iface_t, uct_ud_verbs_base_iface_t);
 
 static UCS_CLASS_DEFINE_NEW_FUNC(uct_ud_verbs_iface_t, uct_iface_t, uct_md_h,
                                  uct_worker_h, const uct_iface_params_t*,
                                  const uct_iface_config_t*);
 
 static UCS_CLASS_DEFINE_DELETE_FUNC(uct_ud_verbs_iface_t, uct_iface_t);
+
+static void UCS_CLASS_DELETE_FUNC_NAME(uct_ud_verbs_mcast_iface_t)(uct_iface_t*);
+
+static UCS_CLASS_INIT_FUNC(uct_ud_verbs_mcast_iface_t, uct_md_h md,
+                           uct_worker_h worker, const uct_iface_params_t *params,
+                           const uct_iface_config_t *tl_config)
+{
+    ucs_trace_func("");
+
+    uct_ud_verbs_iface_tl_ops.iface_query = uct_ud_verbs_iface_query;
+    uct_ud_verbs_iface_tl_ops.iface_close =
+        UCS_CLASS_DELETE_FUNC_NAME(uct_ud_verbs_mcast_iface_t);
+
+    UCS_CLASS_CALL_SUPER_INIT(uct_ud_verbs_base_iface_t, &uct_ud_verbs_iface_ops,
+                              &uct_ud_verbs_iface_tl_ops, md, worker, params,
+                              tl_config);
+
+    if (self->super.super.super.super.worker != NULL) {
+        return uct_ud_mcast_group_init(&self->mcast,
+#if ENABLE_STATS
+                                       self->super.super.stats);
+#else
+                                       NULL);
+#endif
+    }
+
+    return UCS_OK;
+}
+
+static UCS_CLASS_CLEANUP_FUNC(uct_ud_verbs_mcast_iface_t)
+{
+    ucs_trace_func("");
+
+    if (self->super.super.super.super.worker != NULL) {
+        return uct_ud_mcast_group_cleanup(&self->mcast);
+    }
+}
+
+UCS_CLASS_DEFINE(uct_ud_verbs_mcast_iface_t, uct_ud_verbs_base_iface_t);
+
+
+static UCS_CLASS_DEFINE_DELETE_FUNC(uct_ud_verbs_mcast_iface_t, uct_iface_t);
 
 static ucs_status_t
 uct_ud_verbs_query_tl_devices(uct_md_h md,
@@ -877,3 +976,13 @@ uct_ud_verbs_query_tl_devices(uct_md_h md,
 UCT_TL_DEFINE_ENTRY(&uct_ib_component, ud_verbs, uct_ud_verbs_query_tl_devices,
                     uct_ud_verbs_iface_t, "UD_VERBS_",
                     uct_ud_verbs_iface_config_table, uct_ud_iface_config_t);
+
+#if HAVE_MCAST_COLL
+static UCS_CLASS_DEFINE_NEW_FUNC(uct_ud_verbs_mcast_iface_t, uct_iface_t, uct_md_h,
+                                 uct_worker_h, const uct_iface_params_t*,
+                                 const uct_iface_config_t*);
+
+UCT_TL_DEFINE_ENTRY(&uct_ib_component, ud_verbs_mcast, uct_ud_verbs_query_tl_devices,
+                    uct_ud_verbs_mcast_iface_t, "UD_VERBS_MCAST_",
+                    uct_ud_verbs_mcast_iface_config_table, uct_ud_iface_config_t);
+#endif

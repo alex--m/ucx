@@ -39,21 +39,10 @@ SUBDIRS = \
 	src/ucm \
 	src/ucs \
 	src/uct \
-	src/ucp
-
-if HAVE_UCG
-SUBDIRS += $(UCG_SUBDIR)
-endif
-
-if HAVE_UCF
-SUBDIRS += $(UCF_SUBDIR)
-endif
-
-if HAVE_UCB
-SUBDIRS += $(UCB_SUBDIR)
-endif
-
-SUBDIRS += \
+	src/ucp \
+	src/ucb \
+	src/ucg \
+	src/ucf \
 	src/tools/vfs \
 	src/tools/info \
 	src/tools/perf \

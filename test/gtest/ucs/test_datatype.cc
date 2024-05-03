@@ -13,6 +13,7 @@ extern "C" {
 #include <ucs/datastruct/list.h>
 #include <ucs/datastruct/hlist.h>
 #include <ucs/datastruct/ptr_array.h>
+#include <ucs/datastruct/int_array.h>
 #include <ucs/datastruct/ptr_map.inl>
 #include <ucs/datastruct/queue.h>
 #include <ucs/datastruct/piecewise_func.h>
@@ -996,6 +997,61 @@ UCS_TEST_F(test_datatype, ptr_array_locked_random) {
     }
 
     ucs_ptr_array_locked_cleanup(&pa, 1);
+}
+
+UCS_TEST_F(test_datatype, int_array_random) {
+    const unsigned count = 10000 / ucs::test_time_multiplier();
+    ucs_int_array_t pa;
+
+    ucs_int_array_init(&pa, "ptr_array test");
+
+    std::map<int, ucs_int_array_elem_t> map;
+
+    /* Insert phase */
+    for (unsigned i = 0; i < count; ++i) {
+        ucs_int_array_elem_t elem = ucs::rand();
+        unsigned index = ucs_int_array_insert(&pa, elem);
+
+        EXPECT_TRUE(map.end() == map.find(index));
+        map[index] = elem;
+    }
+
+    /* Remove + insert */
+    for (unsigned i = 0; i < count / 10; ++i) {
+        int remove_count = ucs::rand() % 10;
+        for (int j = 0; j < remove_count; ++j) {
+            unsigned to_remove = ucs::rand() % map.size();
+            std::map<int, ucs_int_array_elem_t>::iterator iter = map.begin();
+            std::advance(iter, to_remove);
+            unsigned index = iter->first;
+
+            ucs_int_array_elem_t elem = 0;
+            EXPECT_TRUE(ucs_int_array_lookup(&pa, index, elem));
+            EXPECT_EQ(elem, map[index]);
+
+            ucs_int_array_remove(&pa, index);
+            map.erase(index);
+        }
+
+        int insert_count = ucs::rand() % 10;
+        for (int j = 0; j < insert_count; ++j) {
+            ucs_int_array_elem_t elem = ucs::rand();
+            unsigned index = ucs_int_array_insert(&pa, elem);
+
+            EXPECT_TRUE(map.end() == map.find(index));
+            map[index] = elem;
+        }
+    }
+
+    /* remove all */
+    unsigned index;
+    ucs_int_array_elem_t elem;
+    ucs_int_array_for_each(elem, index, &pa) {
+        EXPECT_EQ(elem, map[index]);
+        ucs_int_array_remove(&pa, index);
+    }
+
+    ucs_int_array_cleanup(&pa, 1);
 }
 
 UCS_TEST_SKIP_COND_F(test_datatype, ptr_array_locked_perf,

@@ -134,7 +134,7 @@ AC_DEFUN([COMPILER_CPU_OPTIMIZATION],
                 [AS_HELP_STRING([--with-$1], [Use $2 compiler option.])],
                 [],
                 [with_$1=$enable_optimizations])
-   
+
     AS_IF([test "x$with_$1" != "xno"],
           [SAVE_CFLAGS="$CFLAGS"
            CFLAGS="$BASE_CFLAGS $CFLAGS $3"
@@ -162,15 +162,15 @@ AC_DEFUN([DETECT_UARCH],
     cpuarch=`grep 'CPU architecture' /proc/cpuinfo 2> /dev/null | cut -d: -f2 | tr -d " " | head -n 1`
     cpuvar=`grep 'CPU variant' /proc/cpuinfo 2> /dev/null | cut -d: -f2 | tr -d " " | head -n 1`
     cpupart=`grep 'CPU part' /proc/cpuinfo 2> /dev/null | cut -d: -f2 | tr -d " " | head -n 1`
-   
+
     ax_cpu=""
     ax_arch=""
-    
+
     AC_MSG_NOTICE(Detected CPU implementation: ${cpuimpl})
     AC_MSG_NOTICE(Detected CPU architecture: ${cpuarch})
     AC_MSG_NOTICE(Detected CPU variant: ${cpuvar})
     AC_MSG_NOTICE(Detected CPU part: ${cpupart})
-   
+
     case $cpuimpl in
       0x42) case $cpupart in
         0x516 | 0x0516)
@@ -206,7 +206,7 @@ AC_DEFUN([DETECT_UARCH],
         ;;
       *)
         ;;
-    esac 
+    esac
     AM_CONDITIONAL([HAVE_AARCH64_THUNDERX2], [test x$ax_cpu = xthunderx2t99])
     AM_CONDITIONAL([HAVE_AARCH64_THUNDERX1], [test x$ax_cpu = xthunderxt88])
     AM_CONDITIONAL([HAVE_AARCH64_HI1620], [test x$ax_cpu = xtsv110])
@@ -345,6 +345,12 @@ COMPILER_CPU_OPTIMIZATION([avx], [AVX], [-mavx],
                                return _mm256_testz_si256(_mm256_set1_epi32(1), _mm256_set1_epi32(3));
                            }
                           ])
+COMPILER_CPU_OPTIMIZATION([avx512f], [AVX512F], [-mavx512f],
+                          [#include <immintrin.h>
+                           int main(int argc, char** argv) {
+                           return _mm512_reduce_add_epi32(_mm512_setzero_epi32());
+                           }
+                          ])
 AS_IF([test "x$with_avx" != xyes],
       [COMPILER_CPU_OPTIMIZATION([sse41], [SSE 4.1], [-msse4.1],
                                  [#include <smmintrin.h>
@@ -356,68 +362,7 @@ AS_IF([test "x$with_avx" != xyes],
                                  [#include <popcntintrin.h>
                                   int main(int argc, char** argv) { return _mm_popcnt_u32(0x101) - 2;
                                   }])
-      ],
-      [COMPILER_CPU_OPTIMIZATION([avx512f], [AVX512F], [-mavx512f],
-                                 [#include <immintrin.h>
-                                  int main(int argc, char** argv) {
-                                      return _mm512_reduce_add_epi32(_mm512_setzero_epi32());
-                                  }])])
-
-
-#
-# CLDEMOTE
-#
-AC_ARG_WITH([cldemote],
-            [AC_HELP_STRING([--with-cldemote], [Use CLDEMOTE compiler option.])],
-            [],
-            [with_cldemote=$enable_optimizations])
-AS_IF([test "x$with_cldemote" != xno],
-      [AC_CHECK_DECL([_mm_cldemote],
-                     [AC_DEFINE([HAVE_CLDEMOTE], [1], [CLDEMOTE support])
-                      BASE_CFLAGS="$BASE_CFLAGS -mcldemote"],
-                     [], [#include <x86intrin.h>])])
-
-
-#
-# CLWB
-#
-AC_ARG_WITH([clwb],
-            [AC_HELP_STRING([--with-clwb], [Use CLWB compiler option.])],
-            [],
-            [with_clwb=$enable_optimizations])
-AS_IF([test "x$with_clwb" != xno],
-      [AC_CHECK_DECL([_mm_clwb],
-                     [AC_DEFINE([HAVE_CLWB], [1], [CLWB support])
-                      BASE_CFLAGS="$BASE_CFLAGS -mclwb"],
-                     [], [#include <x86intrin.h>])])
-
-
-#
-# CLFLUSH
-#
-AC_ARG_WITH([clflush],
-            [AC_HELP_STRING([--with-clflush], [Use CLFLUSH compiler option.])],
-            [],
-            [with_clflush=$enable_optimizations])
-AS_IF([test "x$with_clflush" != xno],
-      [AC_CHECK_DECL([_mm_clflush],
-                     [AC_DEFINE([HAVE_CLFLUSH], [1], [CLFLUSH support])],
-                     [], [#include <x86intrin.h>])])
-
-
-#
-# CLFLUSHOPT
-#
-AC_ARG_WITH([clflushopt],
-            [AC_HELP_STRING([--with-clflushopt], [Use CLFLUSHOPT compiler option.])],
-            [],
-            [with_clflushopt=$enable_optimizations])
-AS_IF([test "x$with_clflushopt" != xno],
-      [AC_CHECK_DECL([_mm_clflushopt],
-                     [AC_DEFINE([HAVE_CLFLUSHOPT], [1], [CLFLUSHOPT support])
-                      BASE_CFLAGS="$BASE_CFLAGS -mclflushopt"],
-                     [], [#include <x86intrin.h>])])
-
+      ])
 
 DETECT_UARCH()
 
@@ -431,9 +376,9 @@ AS_IF([test "x$ax_cpu" != "x"],
       ])
 
 
-# 
+#
 # Architecture tuning
-# 
+#
 AS_IF([test "x$ax_arch" != "x"],
       [COMPILER_CPU_OPTIMIZATION([march], [architecture tuning], [-march=$ax_arch],
                                  [int main(int argc, char** argv) { return 0;}])
@@ -450,7 +395,7 @@ CHECK_SPECIFIC_ATTRIBUTE([optimize], [NOOPTIMIZE],
 #
 # Compile code with frame pointer. Optimizations usually omit the frame pointer,
 # but if we are profiling the code with callgraph we need it.
-# This option may affect perofrmance so it is off by default.
+# This option may affect performance so it is off by default.
 #
 AC_ARG_ENABLE([frame-pointer],
     AS_HELP_STRING([--enable-frame-pointer],
@@ -465,11 +410,33 @@ AS_IF([test "x$enable_frame_pointer" = xyes -o "x$enable_gcov" = xyes],
                                       [AS_MESSAGE([compiling with frame pointer is not supported])])],
       [:])
 
+#
+# Compile code with manually constructed jump-tables.
+# Without this feature, the fallback is to use switch-case, where it is up to the
+# compiler if the generated code will be based on a jump-table implementation.
+# This option takes away the option to build PIE files (for ASLR), so it is off by default.
+#
+AC_ARG_ENABLE([jump-tables],
+    AS_HELP_STRING([--enable-jump-tables],
+                   [Allow for manually constructed jump tables, default: NO]),
+    [],
+    [enable_jump_tables=no])
+AS_IF([test "x$enable_jump_tables" = xyes],
+      [AC_DEFINE([ENABLE_JUMP_TABLES], [1], [Enable manually constructed jump-tables])],
+      [AC_DEFINE([ENABLE_JUMP_TABLES], [0])])
+
+
 ADD_COMPILER_FLAG_IF_SUPPORTED([-funwind-tables],
                                [-funwind-tables],
                                [AC_LANG_SOURCE([[int main(int argc, char** argv){return 0;}]])],
                                [AS_MESSAGE([compiling with unwind tables])],
                                [AS_MESSAGE([compiling without unwind tables])])
+
+ADD_COMPILER_FLAG_IF_SUPPORTED([-fno-plt],
+                               [-fno-plt],
+                               [AC_LANG_SOURCE([[int main(int argc, char** argv){return 0;}]])],
+                               [AS_MESSAGE([compiling without a PLT section in the ELF])],
+                               [AS_MESSAGE([compiling with a PLT section in the ELF])])
 
 
 #

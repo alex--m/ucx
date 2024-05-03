@@ -58,6 +58,7 @@ test/apps/test_hooks
 examples/ucp_client_server
 examples/ucp_hello_world
 examples/uct_hello_world
+examples/ucg_publisher_subscriber
 rpm-dist
 cov_build*
 debian/changelog
@@ -79,6 +80,8 @@ src/ucf/api/ucf_version.h
 src/ucf/base/ucf_version.c
 src/ucb/api/ucb_version.h
 src/ucb/base/ucb_version.c
+src/ucg/api/ucg_version.h
+src/ucg/base/ucg_version.c
 test/mpi/run_mpi.sh
 test/mpi/shmem_pingpong
 test/mpi/test_memhooks

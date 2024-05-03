@@ -15,7 +15,6 @@
 #include <ucs/arch/cpu.h>
 #include <ucs/debug/log.h>
 #include <ucs/time/time.h>
-#include <ucs/sys/math.h>
 #include <ucs/sys/sys.h>
 #include <ucs/sys/string.h>
 
@@ -34,11 +33,6 @@
 #define X86_CPU_CACHE_RESERVED    0x80000000
 #define X86_CPU_CACHE_TAG_L1_ONLY 0x40
 #define X86_CPU_CACHE_TAG_LEAF4   0xff
-
-#if defined (__SSE4_1__)
-#define _mm_load(a)    _mm_stream_load_si128((__m128i *) (a))
-#define _mm_store(a,v) _mm_storeu_si128((__m128i *) (a), (v))
-#endif
 
 
 typedef enum ucs_x86_cpu_cache_type {
@@ -508,9 +502,6 @@ int ucs_arch_get_cpu_flag()
             if (_edx & (1 << 15)) {
                 result |= UCS_CPU_FLAG_CMOV;
             }
-            if (_edx & (1 << 19)) {
-                result |= UCS_CPU_FLAG_CLFLUSH;
-            }
             if (_edx & (1 << 23)) {
                 result |= UCS_CPU_FLAG_MMX;
             }
@@ -548,16 +539,13 @@ int ucs_arch_get_cpu_flag()
                 if (_ebx & (1 << 5)) {
                     result |= UCS_CPU_FLAG_AVX2;
                 }
-                if (_ebx & (1 << 16)) {
-                    result |= UCS_CPU_FLAG_AVX512F;
-                }
             }
-            if (_ecx & (1 << 25)) {
-                result |= UCS_CPU_FLAG_CLDEMOTE;
-            }
-            if (_ebx & (1 << 24)) {
-                result |= UCS_CPU_FLAG_CLWB;
-            }
+            // if (_ecx & (1 << 25)) {
+            //     result |= UCS_CPU_FLAG_CLDEMOTE;
+            // }
+            // if (_ebx & (1 << 24)) {
+            //     result |= UCS_CPU_FLAG_CLWB;
+            // }
         }
         cpu_flag = result;
     }
@@ -719,63 +707,6 @@ ucs_status_t ucs_arch_get_cache_size(size_t *cache_sizes)
     }
 
     return cache_count == UCS_CPU_CACHE_LAST ? UCS_OK : UCS_ERR_UNSUPPORTED;
-}
-
-void ucs_x86_memcpy_sse_movntdqa(void *dst, const void *src, size_t len)
-{
-#if defined (__SSE4_1__)
-    /* Copy unaligned portion of src */
-    if ((uintptr_t)src & 15) {
-        uintptr_t aligned  = (uintptr_t)src & ~15;
-        uintptr_t misalign = (uintptr_t)src & 15;
-        uintptr_t copy     = ucs_min(len, 16 - misalign);
-
-        __m128i tmp = _mm_load(aligned);
-        memcpy(dst, UCS_PTR_BYTE_OFFSET(&tmp, misalign), copy);
-
-        src = UCS_PTR_BYTE_OFFSET(src, copy);
-        dst = UCS_PTR_BYTE_OFFSET(dst, copy);
-        len -= copy;
-    }
-
-    /* Copy 64 bytes at a time */
-    while (len >= 64) {
-        __m128i *S = (__m128i *)src;
-        __m128i *D = (__m128i *)dst;
-        __m128i tmp[4];
-
-        tmp[0] = _mm_load(S + 0);
-        tmp[1] = _mm_load(S + 1);
-        tmp[2] = _mm_load(S + 2);
-        tmp[3] = _mm_load(S + 3);
-
-        _mm_store(D + 0, tmp[0]);
-        _mm_store(D + 1, tmp[1]);
-        _mm_store(D + 2, tmp[2]);
-        _mm_store(D + 3, tmp[3]);
-
-        src = UCS_PTR_BYTE_OFFSET(src, 64);
-        dst = UCS_PTR_BYTE_OFFSET(dst, 64);
-        len -= 64;
-    }
-
-    /* Copy 16 bytes at a time */
-    while (len >= 16) {
-        _mm_store(dst, _mm_load(src));
-
-        src = UCS_PTR_BYTE_OFFSET(src, 16);
-        dst = UCS_PTR_BYTE_OFFSET(dst, 16);
-        len -= 16;
-    }
-
-    /* Copy any remaining bytes */
-    if (len) {
-        __m128i tmp = _mm_load(src);
-        memcpy(dst, &tmp, len);
-    }
-#else
-    memcpy(dst, src, len);
-#endif
 }
 
 #endif

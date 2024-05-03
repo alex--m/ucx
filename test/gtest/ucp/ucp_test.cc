@@ -429,21 +429,32 @@ void ucp_test::set_ucp_config(ucp_config_t *config, const std::string& tls)
 }
 
 ucp_test_variant& ucp_test::add_variant(std::vector<ucp_test_variant>& variants,
-                                        const ucp_params_t& ctx_params,
+                                        const ucx_params_t& ctx_params,
                                         int thread_type) {
     variants.push_back(ucp_test_variant());
-    ucp_test_variant& variant = variants.back();
-    variant.ctx_params        = ctx_params;
-    variant.thread_type       = thread_type;
+    ucp_test_variant& variant    = variants.back();
+    variant.ctx_params           = ctx_params;
+    variant.ctx_params.ucb.super = &variant.ctx_params.ucp;
+    variant.ctx_params.ucg.super = &variant.ctx_params.ucb;
+    variant.ctx_params.ucf.super = &variant.ctx_params.ucg;
+    variant.thread_type          = thread_type;
     return variant;
+}
+
+ucp_test_variant& ucp_test::add_variant(std::vector<ucp_test_variant>& variants,
+                                        const ucp_params_t& ucp_ctx_params,
+                                        int thread_type) {
+    ucx_params_t params = {};
+    params.ucp          = ucp_ctx_params;
+    return add_variant(variants, params, thread_type);
 }
 
 ucp_test_variant& ucp_test::add_variant(std::vector<ucp_test_variant>& variants,
                                         uint64_t ctx_features, int thread_type)
 {
-    ucp_params_t ctx_params = {};
-    ctx_params.field_mask   = UCP_PARAM_FIELD_FEATURES;
-    ctx_params.features     = ctx_features;
+    ucx_params_t ctx_params   = {};
+    ctx_params.ucp.field_mask = UCP_PARAM_FIELD_FEATURES;
+    ctx_params.ucp.features   = ctx_features;
     return add_variant(variants, ctx_params, thread_type);
 }
 
@@ -454,8 +465,8 @@ int ucp_test::get_variant_value(unsigned index) const {
     return GetParam().variant.values.at(index).value;
 }
 
-const ucp_params_t& ucp_test::get_variant_ctx_params() const {
-    return GetParam().variant.ctx_params;
+const ucx_params_t* ucp_test::get_variant_ctx_params() const {
+    return &GetParam().variant.ctx_params;
 }
 
 int ucp_test::get_variant_thread_type() const {
@@ -478,8 +489,18 @@ void ucp_test::add_variant_with_value(std::vector<ucp_test_variant>& variants,
 }
 
 void ucp_test::add_variant_with_value(std::vector<ucp_test_variant>& variants,
-                                      const ucp_params_t& ctx_params, int value,
-                                      const std::string& name, int thread_type)
+                                      const ucx_params_t& ctx_params,
+                                      int value, const std::string& name,
+                                      int thread_type)
+{
+    add_variant_value(add_variant(variants, ctx_params, thread_type).values,
+                      value, name);
+}
+
+void ucp_test::add_variant_with_value(std::vector<ucp_test_variant>& variants,
+                                      const ucp_params_t& ctx_params,
+                                      int value, const std::string& name,
+                                      int thread_type)
 {
     add_variant_value(add_variant(variants, ctx_params, thread_type).values,
                       value, name);
@@ -522,7 +543,8 @@ void ucp_test::add_variant_memtypes(std::vector<ucp_test_variant>& variants,
 
 std::vector<ucp_test_param>
 ucp_test::enum_test_params(const std::vector<ucp_test_variant>& variants,
-                           const std::string& tls) {
+                           const std::string& tls, const std::string& planners)
+{
     std::vector<ucp_test_param> result;
 
     if (!check_tls(tls)) {
@@ -536,11 +558,19 @@ ucp_test::enum_test_params(const std::vector<ucp_test_variant>& variants,
         result.back().variant = *iter;
 
         /* split transports to a vector */
-        std::stringstream ss(tls);
-        while (ss.good()) {
+        std::stringstream sst(tls);
+        while (sst.good()) {
             std::string tl_name;
-            std::getline(ss, tl_name, ',');
+            std::getline(sst, tl_name, ',');
             result.back().transports.push_back(tl_name);
+        }
+
+        /* split planners to a vector */
+        std::stringstream ssp(planners);
+        while (ssp.good()) {
+            std::string planner_name;
+            std::getline(ssp, planner_name, ',');
+            result.back().planners.push_back(planner_name);
         }
     }
 
@@ -633,7 +663,7 @@ ucp_test_base::entity::entity(const ucp_test_param& test_param,
         m_test(test_owner)
 {
     const int thread_type                   = test_param.variant.thread_type;
-    ucp_params_t local_ctx_params           = test_param.variant.ctx_params;
+    ucp_params_t local_ctx_params           = test_param.variant.ctx_params.ucp;
     ucp_worker_params_t local_worker_params = worker_params;
     int num_workers;
 

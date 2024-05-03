@@ -11,6 +11,7 @@
 #include "debug_int.h"
 #include "log.h"
 
+#include <ucs/datastruct/list.h>
 #include <ucs/datastruct/khash.h>
 #include <ucs/memory/rcache_int.h>
 #include <ucs/profile/profile.h>
@@ -1326,4 +1327,116 @@ void ucs_debug_disable_signals()
     kh_foreach_key(&ucs_signal_orig_action_map, signum,
                    ucs_debug_disable_signal_nolock(signum));
     ucs_recursive_spin_unlock(&ucs_kh_lock);
+}
+
+typedef struct ucs_debug_trace_tree {
+    ucs_list_link_t children;
+    ucs_list_link_t peers;
+    struct backtrace_line line;
+    void *ctx;
+} ucs_debug_trace_tree_t;
+
+ucs_debug_trace_tree_t g_trace_root = {
+    UCS_LIST_INITIALIZER(&g_trace_root.children, &g_trace_root.children),
+    UCS_LIST_INITIALIZER(&g_trace_root.children, &g_trace_root.children),
+    { 0 },
+    NULL
+};
+
+void* ucs_debug_get_ctx_by_trace(void *new_ctx)
+{
+    backtrace_h bckt;
+    ucs_status_t status;
+    backtrace_line_h bckt_line;
+    ucs_debug_trace_tree_t *child, *node = &g_trace_root;
+    int i, is_first_child, is_new_node = 0;
+
+    status = ucs_debug_backtrace_create(&bckt, 0);
+    if (status != UCS_OK) {
+        return NULL;
+    }
+
+    (void)i; /* avoid unused warning */
+    for (i = 0; ucs_debug_backtrace_next(bckt, &bckt_line); ++i) {
+        /* Find the child that corresponds to the i-th line in the trace */
+        is_first_child = 1;
+        ucs_list_for_each(child, &node->children, peers) {
+            if ((bckt_line->address == child->line.address) &&
+#ifdef HAVE_DETAILED_BACKTRACE
+                (bckt_line->lineno == child->line.lineno) &&
+                (!strcmp(bckt_line->file, child->line.file)) &&
+                (!strcmp(bckt_line->function, child->line.function))) {
+#else /* HAVE_DETAILED_BACKTRACE */
+                (!strcmp(bckt_line->symbol, child->line.symbol))) {
+#endif
+                    if (ucs_unlikely(!is_first_child)) {
+                        /* Promote this child to be the first child */
+                        ucs_list_del(&child->peers);
+                        goto insert_head;
+                    }
+                    goto next_line;
+            }
+            is_first_child = 0;
+        }
+
+        /* Child not found - create a new one */
+        child = ucs_malloc(sizeof(*child), "ucs_debug_trace_tree");
+        if (ucs_unlikely(child == NULL)) {
+            return NULL;
+        }
+
+        is_new_node          = 1;
+        child->ctx           = NULL;
+        child->line.address  = bckt_line->address;
+#ifdef HAVE_DETAILED_BACKTRACE
+        child->line.lineno   = bckt_line->lineno;
+        child->line.file     = ucs_strdup(bckt_line->file,
+                                          "ucs_debug_trace_tree_file");
+        child->line.function = ucs_strdup(bckt_line->function,
+                                          "ucs_debug_trace_tree_function");
+#else /* HAVE_DETAILED_BACKTRACE */
+        child->line.symbol   = ucs_strdup(bckt_line->symbol,
+                                          "ucs_debug_trace_tree_symbol");
+#endif
+        ucs_list_head_init(&child->children);
+
+insert_head:
+        ucs_list_add_head(&node->children, &child->peers);
+
+next_line:
+        /* Proceed to the next level of the tree */
+        node = child;
+    }
+
+    ucs_debug_backtrace_destroy(bckt);
+
+    if (ucs_unlikely(is_new_node)) {
+        node->ctx = new_ctx;
+    }
+    return node->ctx;
+}
+
+static void ucs_debug_clear_traces_recursive(ucs_debug_trace_tree_t *node)
+{
+    ucs_debug_trace_tree_t *child;
+
+    while (!ucs_list_is_empty(&node->children)) {
+        child = ucs_list_extract_head(&node->children, ucs_debug_trace_tree_t,
+                                      peers);
+
+        ucs_debug_clear_traces_recursive(child);
+
+#ifdef HAVE_DETAILED_BACKTRACE
+        ucs_free(child->line.function);
+        ucs_free(child->line.file);
+#else /* HAVE_DETAILED_BACKTRACE */
+        ucs_free(child->line.symbol);
+#endif
+        ucs_free(child);
+    }
+}
+
+void ucs_debug_clear_traces(void)
+{
+    ucs_debug_clear_traces_recursive(&g_trace_root);
 }
