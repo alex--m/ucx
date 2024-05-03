@@ -4140,7 +4140,7 @@ void *ucp_request_alloc(ucp_worker_h worker);
  * @return Error code as defined by @ref ucs_status_t
  */
 ucs_status_t ucp_dt_make_strided(unsigned count, size_t length, size_t stride,
-                                 size_t prefix, ucp_datatype_t *datatype_p);
+                                 ucp_datatype_t *datatype_p);
 
 
 /**

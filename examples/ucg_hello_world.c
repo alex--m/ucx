@@ -105,11 +105,10 @@ ucs_status_t parse_cmd(int argc, char * const argv[], char **server_name)
 
 int main(int argc, char **argv)
 {
-    // TODO: make this function work...
     int ret         = -1;
     char *root_name = NULL;
     ucs_status_t status;
-    void *test_string;
+    char *test_string;
 
     /* Parse the command line */
     status = parse_cmd(argc, argv, &root_name);
@@ -132,15 +131,16 @@ int main(int argc, char **argv)
 
     test_string = mem_type_malloc(test_string_length);
     CHKERR_JUMP(test_string == NULL, "allocate memory", err);
-    snprintf(test_string, test_string_length, "Hello world!");
+    if (!root_name) snprintf(test_string, test_string_length, "Hello world!");
 
-    status = ucg_minimal_init(&ctx, &server_address, num_connections, root_name ? 0 : UCG_MINIMAL_FLAG_SERVER);
+    status = ucg_minimal_init(&ctx, &server_address, num_connections, NULL,
+                              root_name ? 0 : UCG_MINIMAL_FLAG_SERVER);
     CHKERR_JUMP(status != UCS_OK, "ucg_minimal_init", err_cleanup);
 
     status = ucg_minimal_broadcast(&ctx, test_string, test_string_length);
     CHKERR_JUMP(status != UCS_OK, "ucg_minimal_broadcast", err_finalize);
 
-    printf("%s", test_string);
+    printf("%s\n", test_string);
     ret = 0;
 
 err_finalize:

@@ -9,6 +9,7 @@
 #ifndef UCS_PPC64_CPU_H_
 #define UCS_PPC64_CPU_H_
 
+#include <ucm/util/log.h>
 #include <ucs/sys/compiler.h>
 #include <ucs/type/status.h>
 #ifdef HAVE_SYS_PLATFORM_PPC_H
@@ -86,9 +87,19 @@ static inline void *ucs_memcpy_relaxed(void *dst, const void *src, size_t len)
 }
 
 static UCS_F_ALWAYS_INLINE void
-ucs_memcpy_nontemporal(void *dst, const void *src, size_t len)
+ucs_memcpy_nontemporal(void* restrict dst, const void* restrict src, size_t len)
 {
     memcpy(dst, src, len);
+}
+
+static UCS_F_ALWAYS_INLINE void
+ucs_memcpy_nontemporal_cache_line(void* restrict dst, int is_dst_nt,
+                                  const void* restrict src)
+{
+    ucm_assert(((uintptr_t)dst % UCS_ARCH_CACHE_LINE_SIZE) == 0);
+    ucm_assert(((uintptr_t)src % UCS_ARCH_CACHE_LINE_SIZE) == 0);
+
+    ucs_memcpy_nontemporal(dst, src, UCS_ARCH_CACHE_LINE_SIZE);
 }
 
 static inline ucs_status_t ucs_arch_get_cache_size(size_t *cache_sizes)
@@ -96,7 +107,8 @@ static inline ucs_status_t ucs_arch_get_cache_size(size_t *cache_sizes)
     return UCS_ERR_UNSUPPORTED;
 }
 
-static inline int ucs_arch_cache_line_is_equal(const void *a, const void *b)
+static inline int ucs_arch_cache_line_is_equal(const void* restrict a,
+                                               const void* restrict b)
 {
     return (0 == memcmp(a, b, UCS_ARCH_CACHE_LINE_SIZE));
 }

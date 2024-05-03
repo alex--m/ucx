@@ -6,4 +6,12 @@
 noinst_LTLIBRARIES      = libucb_base.la
 libucb_base_la_CFLAGS   = $(BASE_CFLAGS)
 libucb_base_la_CPPFLAGS = $(BASE_CPPFLAGS)
-libucb_base_la_SOURCES  = ucb.c ucb_version.c
+
+noinst_HEADERS = \
+	ucb_context.h \
+	ucb_pipes.h
+
+libucb_base_la_SOURCES = \
+	ucb_context.c \
+	ucb_pipes.c \
+	ucb_version.c

@@ -34,6 +34,12 @@
 #include <ucp/core/ucp_worker.h>
 #include <ucp/dt/datatype_iter.h>
 #include <ucp/wireup/wireup.h>
+#include <ucb/base/ucb_context.h>
+#include <ucg/base/ucg_context.h>
+#include <ucf/base/ucf_context.h>
+#include <ucb/base/ucb_pipes.h>
+#include <ucg/base/ucg_group.h>
+#include <ucf/base/ucf_file.h>
 
 #if HAVE_IB
 #  include <uct/ib/base/ib_device.h>
@@ -68,13 +74,6 @@
 #  include <uct/ugni/base/ugni_iface.h>
 #  include <uct/ugni/base/ugni_device.h>
 #  include <uct/ugni/smsg/ugni_smsg_ep.h>
-#endif
-
-#ifdef ENABLE_UCG
-#  include <ucg/base/ucg_group.h>
-#  include <ucg/base/ucg_context.h>
-#  include <ucg/builtin/ops/builtin_ops.h>
-#  include <ucg/builtin/plan/builtin_plan.h>
 #endif
 
 static void print_size(const char *name, size_t size)
@@ -297,17 +296,15 @@ void print_type_info(const char * tl_name)
     PRINT_SIZE(ucp_rkey_t);
     PRINT_SIZE(ucp_wireup_msg_t);
 
-#ifdef ENABLE_UCG
+    printf("\nUCB:\n");
+    PRINT_SIZE(ucb_context_t);
+    PRINT_SIZE(ucb_pipes_t);
+
     printf("\nUCG:\n");
     PRINT_SIZE(ucg_context_t);
     PRINT_SIZE(ucg_group_t);
-    PRINT_SIZE(ucg_plan_t);
 
-    printf("\nUCG - builtin:\n");
-    PRINT_SIZE(ucg_builtin_op_t);
-    PRINT_SIZE(ucg_builtin_op_step_t);
-    PRINT_SIZE(ucg_builtin_request_t);
-    PRINT_SIZE(ucg_builtin_comp_slot_t);
-    PRINT_SIZE(ucg_builtin_plan_t);
-#endif
+    printf("\nUCF:\n");
+    PRINT_SIZE(ucf_context_t);
+    PRINT_SIZE(ucf_file_t);
 }

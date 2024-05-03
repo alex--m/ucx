@@ -58,6 +58,9 @@ gtest_LDADD = \
 	$(top_builddir)/src/uct/libuct.la \
 	$(top_builddir)/src/ucm/libucm.la \
 	$(top_builddir)/src/ucp/libucp.la \
+	$(top_builddir)/src/ucb/libucb.la \
+	$(top_builddir)/src/ucg/libucg.la \
+	$(top_builddir)/src/ucf/libucf.la \
 	$(top_builddir)/src/tools/perf/lib/libucxperf.la \
 	common/googletest/libgtest.la \
 	$(OPENMP_CFLAGS) \
@@ -195,7 +198,13 @@ gtest_SOURCES = \
 	ucs/test_log.cc \
 	ucs/test_iov.cc \
 	ucs/test_vfs.cc \
-	ucs/arch/test_x86_64.cc
+	ucs/arch/test_x86_64.cc \
+	\
+	ucg/test_ucg_coll.cc \
+	ucg/test_ucg_context.cc \
+	ucg/test_ucg_group.cc \
+	ucg/test_ucg_topo.cc \
+	ucg/ucg_test.cc
 
 if HAVE_IB
 gtest_SOURCES += \
@@ -283,23 +292,10 @@ noinst_HEADERS = \
 	ucp/test_ucp_memheap.h \
 	ucp/test_ucp_tag.h \
 	ucp/ucp_test.h \
-	ucp/ucp_datatype.h
+	ucp/ucp_datatype.h \
+	\
+	ucg/ucg_test.h
 
-if HAVE_UCG
-noinst_HEADERS += ucg/ucg_test.h
-gtest_LDADD += $(top_builddir)/src/ucg/libucg.la
-gtest_SOURCES += \
-	ucg/test_builtin.cc \
-	ucg/test_coll.cc \
-	ucg/test_coll_algorithm.cc \
-	ucg/test_context.cc \
-	ucg/test_group.cc \
-	ucg/test_op.cc \
-	ucg/test_plan.cc \
-	ucg/test_step.cc \
-	ucg/ucg_test.cc
-
-endif
 
 .PHONY: test test gdb valgrind fix_rpath ucx
 

@@ -62,7 +62,10 @@ static xpmem_segid_t   uct_xpmem_global_xsegid        = -1;
 
 /* Hash of remote regions */
 static khash_t(xpmem_remote_mem) uct_xpmem_remote_mem_hash = KHASH_STATIC_INITIALIZER;
+static ucs_init_once_t           uct_xpmem_remote_mem_once = UCS_INIT_ONCE_INITIALIZER;
+#if ENABLE_MT
 static ucs_recursive_spinlock_t  uct_xpmem_remote_mem_lock;
+#endif
 
 static ucs_config_field_t uct_xpmem_md_config_table[] = {
   {"MM_", "", NULL,
@@ -320,7 +323,9 @@ uct_xpmem_rmem_get(xpmem_segid_t xsegid, uct_xpmem_remote_mem_t **rmem_p)
     ucs_status_t status;
     khiter_t khiter;
 
+#if ENABLE_MT
     ucs_recursive_spin_lock(&uct_xpmem_remote_mem_lock);
+#endif
 
     khiter = kh_get(xpmem_remote_mem, &uct_xpmem_remote_mem_hash, xsegid);
     if (ucs_likely(khiter != kh_end(&uct_xpmem_remote_mem_hash))) {
@@ -338,17 +343,23 @@ uct_xpmem_rmem_get(xpmem_segid_t xsegid, uct_xpmem_remote_mem_t **rmem_p)
     status  = UCS_OK;
 
 out_unlock:
+#if ENABLE_MT
     ucs_recursive_spin_unlock(&uct_xpmem_remote_mem_lock);
+#endif
     return status;
 }
 
 static void uct_xpmem_rmem_put(uct_xpmem_remote_mem_t *rmem)
 {
+#if ENABLE_MT
     ucs_recursive_spin_lock(&uct_xpmem_remote_mem_lock);
+#endif
     if (--rmem->refcount == 0) {
         uct_xpmem_rmem_del(rmem);
     }
+#if ENABLE_MT
     ucs_recursive_spin_unlock(&uct_xpmem_remote_mem_lock);
+#endif
 }
 
 static ucs_status_t
@@ -553,10 +564,10 @@ static uct_mm_md_mapper_ops_t uct_xpmem_md_ops = {
 
 static void uct_xpmem_global_init()
 {
-    static ucs_init_once_t xpmem_ctor = UCS_INIT_ONCE_INITIALIZER;
-
-    UCS_INIT_ONCE(&xpmem_ctor) {
+    UCS_INIT_ONCE(&uct_xpmem_remote_mem_once) {
+#if ENABLE_MT
         ucs_recursive_spinlock_init(&uct_xpmem_remote_mem_lock, 0);
+#endif
     }
 }
 
@@ -565,9 +576,7 @@ static void uct_xpmem_global_cleanup()
     unsigned long num_leaked_segments;
     uct_xpmem_remote_mem_t *rmem;
 
-    static ucs_init_once_t xpmem_dtor = UCS_INIT_ONCE_INITIALIZER;
-
-    UCS_INIT_ONCE(&xpmem_dtor) {
+    UCS_CLEANUP_ONCE(&uct_xpmem_remote_mem_once) {
         num_leaked_segments = 0;
         kh_foreach_value(&uct_xpmem_remote_mem_hash, rmem, {
             ucs_debug("remote segment id %lx apid %lx is not released, refcount %d",
@@ -582,11 +591,42 @@ static void uct_xpmem_global_cleanup()
                      num_leaked_segments);
         }
 
+#if ENABLE_MT
         ucs_recursive_spinlock_destroy(&uct_xpmem_remote_mem_lock);
+#endif
     }
 }
 
+#if HAVE_SM_COLL
+#if HAVE_SM_COLL_EXTRA
+static void uct_xpmemctor_locked_bcast_init() {}
+static void uct_xpmemctor_locked_incast_init() {}
+static void uct_xpmemctor_locked_bcast_cleanup() {}
+static void uct_xpmemctor_locked_incast_cleanup() {}
+static void uct_xpmemctor_atomic_bcast_init() {}
+static void uct_xpmemctor_atomic_incast_init() {}
+static void uct_xpmemctor_atomic_bcast_cleanup() {}
+static void uct_xpmemctor_atomic_incast_cleanup() {}
+static void uct_xpmemctor_hypothetic_bcast_init() {}
+static void uct_xpmemctor_hypothetic_incast_init() {}
+static void uct_xpmemctor_hypothetic_bcast_cleanup() {}
+static void uct_xpmemctor_hypothetic_incast_cleanup() {}
+static void uct_xpmemctor_counted_slots_bcast_init() {}
+static void uct_xpmemctor_counted_slots_incast_init() {}
+static void uct_xpmemctor_counted_slots_bcast_cleanup() {}
+static void uct_xpmemctor_counted_slots_incast_cleanup() {}
+#endif
+static void uct_xpmemctor_flagged_slots_bcast_init() {}
+static void uct_xpmemctor_flagged_slots_incast_init() {}
+static void uct_xpmemctor_flagged_slots_bcast_cleanup() {}
+static void uct_xpmemctor_flagged_slots_incast_cleanup() {}
+static void uct_xpmemctor_collaborative_bcast_init() {}
+static void uct_xpmemctor_collaborative_incast_init() {}
+static void uct_xpmemctor_collaborative_bcast_cleanup() {}
+static void uct_xpmemctor_collaborative_incast_cleanup() {}
+#endif
+
 UCT_MM_TL_DEFINE(xpmem, &uct_xpmem_md_ops, uct_xpmem_rkey_unpack,
-                 uct_xpmem_rkey_release, "XPMEM");
+                 uct_xpmem_rkey_release, "XPMEM_");
 
 UCT_MM_TL_INIT(xpmem, ctor, uct_xpmem_global_init(), uct_xpmem_global_cleanup())

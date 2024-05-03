@@ -38,13 +38,16 @@ typedef struct {
     struct {
         size_t                        max_send_sge;
     } config;
-} uct_ud_verbs_iface_t;
+} uct_ud_verbs_base_iface_t;
 
+typedef struct uct_ud_verbs_iface {
+    uct_ud_verbs_base_iface_t super;
+} uct_ud_verbs_iface_t;
 
 UCS_CLASS_DECLARE(uct_ud_verbs_ep_t, const uct_ep_params_t *)
 
 
-ucs_status_t uct_ud_verbs_qp_max_send_sge(uct_ud_verbs_iface_t *iface,
+ucs_status_t uct_ud_verbs_qp_max_send_sge(uct_ud_verbs_base_iface_t *iface,
                                           size_t *max_send_sge);
 
 int uct_ud_verbs_ep_is_connected(const uct_ep_h tl_ep,

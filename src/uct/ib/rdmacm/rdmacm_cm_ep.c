@@ -28,6 +28,7 @@ const char* uct_rdmacm_cm_ep_str(uct_rdmacm_cm_ep_t *cep, char *str,
     static const char *ep_flag_to_str[] = {
         [ucs_ilog2(UCT_RDMACM_CM_EP_ON_CLIENT)]                = "client",
         [ucs_ilog2(UCT_RDMACM_CM_EP_ON_SERVER)]                = "server",
+        [ucs_ilog2(UCT_RDMACM_CM_EP_MULTICAST)]                = "multicast",
         [ucs_ilog2(UCT_RDMACM_CM_EP_CLIENT_CONN_CB_INVOKED)]   = "connect_cb_invoked",
         [ucs_ilog2(UCT_RDMACM_CM_EP_SERVER_NOTIFY_CB_INVOKED)] = "notify_cb_invoked",
         [ucs_ilog2(UCT_RDMACM_CM_EP_GOT_DISCONNECT)]           = "got_disconnect",
@@ -476,6 +477,10 @@ static ucs_status_t uct_rdmacm_cm_ep_client_init(uct_rdmacm_cm_ep_t *cep,
     const struct sockaddr *src_addr;
 
     cep->flags |= UCT_RDMACM_CM_EP_ON_CLIENT;
+    if ((params->field_mask & UCT_EP_PARAM_FIELD_SOCKADDR) &&
+        (params->sockaddr->addr->sa_family == AF_INET6)) { // TODO: change this logic
+        cep->flags |= UCT_RDMACM_CM_EP_MULTICAST;
+    }
 
     status = UCT_CM_SET_CB(params, UCT_EP_PARAM_FIELD_SOCKADDR_CONNECT_CB_CLIENT,
                            cm_ep->client.connect_cb, params->sockaddr_cb_client,
@@ -669,6 +674,19 @@ uct_rdmacm_cm_ep_send_priv_data(uct_rdmacm_cm_ep_t *cep, const void *priv_data,
             status = UCS_ERR_IO_ERROR;
             goto err_destroy_qpn;
         }
+    } else if (cep->flags & UCT_RDMACM_CM_EP_MULTICAST) {
+        ucs_trace("%s rdma_join_multicast on cm_id %p",
+                  uct_rdmacm_cm_ep_str(cep, ep_str, UCT_RDMACM_EP_STRING_LEN),
+                  cep->id);
+        if (rdma_join_multicast(cep->id, NULL, NULL)) {
+            uct_cm_ep_peer_error(&cep->super,
+                                 "rdma_connect(on id=%p) failed: %m", cep->id);
+            status = UCS_ERR_IO_ERROR;
+            goto err_destroy_qpn;
+        }
+
+
+
     } else {
         ucs_assert(cep->flags & UCT_RDMACM_CM_EP_ON_SERVER);
         ucs_trace("%s: rdma_accept on cm_id %p",

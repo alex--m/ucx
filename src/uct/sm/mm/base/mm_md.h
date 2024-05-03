@@ -172,9 +172,9 @@ typedef struct uct_mm_component {
             .rkey_ptr           = uct_sm_rkey_ptr, \
             .rkey_release       = _rkey_release, \
             .rkey_compare       = uct_base_rkey_compare, \
-            .name               = #_name #_name_suffix, \
+            .name               = #_name , \
             .md_config          = { \
-                .name           = #_name #_name_suffix " memory domain", \
+                .name           = #_name " memory domain", \
                 .prefix         = _cfg_prefix, \
                 .table          = uct_##_name##_md_config_table, \
                 .size           = sizeof(uct_##_name##_md_config_t), \

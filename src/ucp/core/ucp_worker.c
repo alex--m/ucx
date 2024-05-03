@@ -177,17 +177,13 @@ static void ucp_worker_set_am_handlers(ucp_worker_iface_t *wiface, int is_proxy)
     ucs_trace_func("iface=%p is_proxy=%d", wiface->iface, is_proxy);
 
     for (am_id = UCP_AM_ID_FIRST; am_id < UCP_AM_ID_MAX; ++am_id) {
-        if (!ucp_am_handlers[am_id]->cb) {
+        if ((!ucp_am_handlers[am_id]) || (!ucp_am_handlers[am_id]->cb)) {
             continue;
         }
 
         if (!(wiface->attr.cap.flags & (UCT_IFACE_FLAG_AM_SHORT |
                                         UCT_IFACE_FLAG_AM_BCOPY |
                                         UCT_IFACE_FLAG_AM_ZCOPY))) {
-            continue;
-        }
-
-        if (ucp_am_handlers[am_id] == NULL) {
             continue;
         }
 
@@ -248,7 +244,8 @@ static void ucp_worker_remove_am_handlers(ucp_worker_h worker)
 
     for (iface_id = 0; iface_id < worker->num_ifaces; ++iface_id) {
         wiface = worker->ifaces[iface_id];
-        if (!(wiface->attr.cap.flags & (UCT_IFACE_FLAG_AM_SHORT |
+        if (!wiface ||
+            !(wiface->attr.cap.flags & (UCT_IFACE_FLAG_AM_SHORT |
                                         UCT_IFACE_FLAG_AM_BCOPY |
                                         UCT_IFACE_FLAG_AM_ZCOPY))) {
             continue;
@@ -1244,6 +1241,24 @@ err:
     return status;
 }
 
+void ucp_worker_del_resource_ifaces(ucp_worker_h worker,
+                                    unsigned iface_index_base,
+                                    ucp_tl_bitmap_t coll_tl_bitmap)
+{
+    ucp_rsc_index_t tl_id;
+
+    if (iface_index_base >= worker->num_ifaces) {
+        return;
+    }
+
+    UCS_BITMAP_FOR_EACH_BIT(coll_tl_bitmap, tl_id) {
+        ucs_assert(ucp_worker_is_tl_coll(worker, tl_id));
+        ucp_worker_iface_cleanup(worker->ifaces[iface_index_base]);
+        worker->ifaces[iface_index_base] = NULL;
+        iface_index_base++;
+    }
+}
+
 static void ucp_worker_close_ifaces(ucp_worker_h worker)
 {
     ucp_rsc_index_t iface_id;
@@ -1589,8 +1604,10 @@ err:
 
 void ucp_worker_iface_cleanup(ucp_worker_iface_t *wiface)
 {
-    uct_worker_progress_unregister_safe(wiface->worker->uct,
-                                        &wiface->check_events_id);
+    if (wiface->worker) {
+        uct_worker_progress_unregister_safe(wiface->worker->uct,
+                                            &wiface->check_events_id);
+    }
     ucp_worker_iface_disarm(wiface);
     ucp_worker_iface_remove_event_handler(wiface);
     ucp_worker_uct_iface_close(wiface);
@@ -1880,6 +1897,8 @@ ucp_worker_print_used_tls(ucp_worker_h worker, ucp_worker_cfg_index_t cfg_index)
     ucp_lane_map_t stream_lanes_map = 0;
     ucp_lane_map_t am_lanes_map     = 0;
     ucp_lane_map_t ka_lanes_map     = 0;
+    ucp_lane_map_t incast_lanes_map = 0;
+    ucp_lane_map_t bcast_lanes_map  = 0;
     int rma_emul                    = 0;
     int amo_emul                    = 0;
     int num_valid_lanes             = 0;
@@ -1932,12 +1951,24 @@ ucp_worker_print_used_tls(ucp_worker_h worker, ucp_worker_cfg_index_t cfg_index)
         }
     }
 
+    if ((context->config.features & UCP_FEATURE_GROUPS) &&
+        (key->incast_lane != UCP_NULL_LANE)) {
+        incast_lanes_map |= UCS_BIT(key->incast_lane);
+        ++num_valid_lanes;
+    }
+
+    if ((context->config.features & UCP_FEATURE_GROUPS) &&
+        (key->bcast_lane != UCP_NULL_LANE)) {
+        bcast_lanes_map |= UCS_BIT(key->bcast_lane);
+        ++num_valid_lanes;
+    }
+
     if (num_valid_lanes == 0) {
         return;
     }
 
     if ((context->config.features & UCP_FEATURE_RMA) && (rma_lanes_map == 0)) {
-        ucs_assert(key->am_lane != UCP_NULL_LANE);
+        ucs_assert(incast_lanes_map || bcast_lanes_map || (key->am_lane != UCP_NULL_LANE));
         rma_lanes_map |= UCS_BIT(key->am_lane);
         rma_emul       = 1;
     }
@@ -1956,6 +1987,8 @@ ucp_worker_print_used_tls(ucp_worker_h worker, ucp_worker_cfg_index_t cfg_index)
     ucp_worker_add_feature_rsc(context, key, am_lanes_map, "am", &strb);
     ucp_worker_add_feature_rsc(context, key, stream_lanes_map, "stream", &strb);
     ucp_worker_add_feature_rsc(context, key, ka_lanes_map, "ka", &strb);
+    ucp_worker_add_feature_rsc(context, key, incast_lanes_map, "incast", &strb);
+    ucp_worker_add_feature_rsc(context, key, bcast_lanes_map, "bcast", &strb);
 
     ucs_string_buffer_rtrim(&strb, "; ");
 

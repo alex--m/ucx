@@ -8,6 +8,7 @@
 #ifndef UCS_ASM_X86_64_H_
 #define UCS_ASM_X86_64_H_
 
+#include <ucm/util/log.h>
 #include <ucs/arch/atomic.h>
 #include <ucs/sys/compiler.h>
 #include <ucs/arch/generic/cpu.h>
@@ -20,7 +21,7 @@
 #ifdef __SSE4_1__
 #  include <smmintrin.h>
 #endif
-#if defined(__AVX__)
+#ifdef __AVX__
 #  include <immintrin.h>
 #endif
 #if defined(__CLWB__) || defined(__CLDEMOTE__)
@@ -55,13 +56,12 @@ ucs_cpu_flag_t ucs_arch_get_cpu_flag() UCS_F_NOOPTIMIZE;
 ucs_cpu_vendor_t ucs_arch_get_cpu_vendor();
 void ucs_cpu_init();
 ucs_status_t ucs_arch_get_cache_size(size_t *cache_sizes);
-void ucs_x86_memcpy_sse_movntdqa(void *dst, const void *src, size_t len);
 
 static UCS_F_ALWAYS_INLINE int ucs_arch_x86_rdtsc_enabled()
 {
     if (ucs_unlikely(ucs_arch_x86_enable_rdtsc == UCS_TRY)) {
         ucs_x86_init_tsc_freq();
-        ucs_assert(ucs_arch_x86_enable_rdtsc != UCS_TRY);
+        ucm_assert(ucs_arch_x86_enable_rdtsc != UCS_TRY);
     }
 
     return ucs_arch_x86_enable_rdtsc;
@@ -130,21 +130,133 @@ static inline void *ucs_memcpy_relaxed(void *dst, const void *src, size_t len)
     return memcpy(dst, src, len);
 }
 
+#ifdef __SSE4_1__
+#define _mm_load_aligned(a)       _mm_stream_load_si128((__m128i *) (a))
+#define _mm_load_unaligned(a)     _mm_lddqu_si128((__m128i *) (a))
+#define _mm_store(a,v)            _mm_storeu_si128((__m128i *) (a), (v))
+#define _mm_store_aligned(a,v)    _mm_store_si128((__m128i *) (a),  (v))
+#define _mm_store_aligned_nt(a,v) _mm_store_si128((__m128i *) (a),  (v))
+
 static UCS_F_ALWAYS_INLINE void
-ucs_memcpy_nontemporal(void *dst, const void *src, size_t len)
+ucs_memcpy_512b(void* restrict dst, int is_dst_aligned_64, int is_dst_nt,
+                const void* restrict src, uintptr_t src_offset, uintptr_t len)
 {
-    ucs_x86_memcpy_sse_movntdqa(dst, src, len);
+    ucs_assert(len == 64); /* Partial copy is not implemented */
+
+#ifdef __AVX512F__
+    if (src_offset == 0) {
+        __m512i tmp512 = _mm512_stream_load_si512((__m512i*)src);
+
+        if (is_dst_aligned_64) {
+            if (is_dst_nt) {
+                _mm512_stream_si512((__m512i*)dst, tmp512);
+            } else {
+                _mm512_store_si512(dst, tmp512);
+            }
+        } else {
+            _mm512_storeu_si512(dst, tmp512);
+        }
+
+        return;
+    }
+#endif
+
+    __m128i *s = (__m128i *)src;
+    __m128i *d = (__m128i *)dst;
+    __m128i tmp[4];
+
+    ucm_assert(((uintptr_t)src % sizeof(__m128i)) == 0);
+
+    tmp[0] = _mm_load_aligned(s + 0);
+    tmp[1] = _mm_load_aligned(s + 1);
+    tmp[2] = _mm_load_aligned(s + 2);
+    tmp[3] = _mm_load_aligned(s + 3);
+
+    if (is_dst_aligned_64) {
+        ucm_assert(((uintptr_t)dst % sizeof(UCS_ARCH_CACHE_LINE_SIZE)) == 0);
+
+        if (is_dst_nt) {
+            _mm_store_aligned_nt(d + 0, tmp[0]);
+            _mm_store_aligned_nt(d + 1, tmp[1]);
+            _mm_store_aligned_nt(d + 2, tmp[2]);
+            _mm_store_aligned_nt(d + 3, tmp[3]);
+        } else {
+            _mm_store_aligned(d + 0, tmp[0]);
+            _mm_store_aligned(d + 1, tmp[1]);
+            _mm_store_aligned(d + 2, tmp[2]);
+            _mm_store_aligned(d + 3, tmp[3]);
+        }
+    } else {
+        _mm_store(d + 0, tmp[0]);
+        _mm_store(d + 1, tmp[1]);
+        _mm_store(d + 2, tmp[2]);
+        _mm_store(d + 3, tmp[3]);
+    }
 }
 
-static inline int ucs_arch_cache_line_is_equal(const void *a, const void *b)
+static UCS_F_ALWAYS_INLINE void
+ucs_memcpy_128b(void* restrict dst, int is_dst_aligned_64, int is_dst_nt,
+                const void* restrict src, uintptr_t src_offset, uintptr_t len)
+{
+    __m128i tmp = _mm_load_unaligned(src);
+    memcpy(dst, UCS_PTR_BYTE_OFFSET(&tmp, src_offset), len);
+    ucs_assert(src_offset + len <= 16);
+}
+#else
+static UCS_F_ALWAYS_INLINE void
+ucs_memcpy_512b(void* restrict dst, int is_dst_aligned_64, int is_dst_nt,
+                const void* restrict src, uintptr_t src_offset, uintptr_t len)
+{
+    memcpy(dst, UCS_PTR_BYTE_OFFSET(src, src_offset), len);
+}
+
+static UCS_F_ALWAYS_INLINE void
+ucs_memcpy_128b(void* restrict dst, int is_dst_aligned_64, int is_dst_nt,
+                const void* restrict src, uintptr_t src_offset, uintptr_t len)
+{
+    memcpy(dst, UCS_PTR_BYTE_OFFSET(src, src_offset), len);
+    ucs_assert(src_offset + len <= 16);
+}
+#endif
+
+static UCS_F_ALWAYS_INLINE void
+ucs_memcpy_nontemporal(void* restrict dst, const void* restrict src, size_t len)
+{
+#ifdef __SSE4_1__
+    if (ucs_likely(len > 16)) {
+        ucs_arch_generic_memcpy(dst, src, len);
+        return;
+    }
+#endif
+    memcpy(dst, src, len);
+}
+
+static UCS_F_ALWAYS_INLINE void
+ucs_memcpy_nontemporal_cache_line(void* restrict dst, int is_dst_nt,
+                                  const void* restrict src)
+{
+    ucm_assert(((uintptr_t)dst % UCS_ARCH_CACHE_LINE_SIZE) == 0);
+    ucm_assert(((uintptr_t)src % UCS_ARCH_CACHE_LINE_SIZE) == 0);
+
+#ifdef __SSE4_1__
+    ucs_memcpy_512b(dst, 1, is_dst_nt, src, 0, 64);
+#else
+    memcpy(dst, src, UCS_ARCH_CACHE_LINE_SIZE);
+    if (is_dst_nt) {
+        ucs_arch_share_cache(dst);
+    }
+#endif
+}
+
+static inline int ucs_arch_cache_line_is_equal(const void* restrict a,
+                                               const void* restrict b)
 {
 #ifdef __AVX512F__
-    ucs_assert(((uintptr_t)a % UCS_ARCH_CACHE_LINE_SIZE) == 0);
-    ucs_assert(((uintptr_t)b % UCS_ARCH_CACHE_LINE_SIZE) == 0);
+    ucm_assert(((uintptr_t)a % UCS_ARCH_CACHE_LINE_SIZE) == 0);
+    ucm_assert(((uintptr_t)b % UCS_ARCH_CACHE_LINE_SIZE) == 0);
 
-    return (0 == _mm512_cmp_ps_mask(_mm512_load_ps(a),
-                                    _mm512_load_ps(b),
-                                    _MM_CMPINT_NE));
+    return (0 == _mm512_cmpneq_epu32_mask(_mm512_load_epi32(a),
+                                          _mm512_load_epi32(b)));
 #else
     return (0 == memcmp(a, b, UCS_ARCH_CACHE_LINE_SIZE));
 #endif

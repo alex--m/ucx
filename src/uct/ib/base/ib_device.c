@@ -1171,6 +1171,28 @@ uct_ib_device_create_ah(uct_ib_device_t *dev, struct ibv_ah_attr *ah_attr,
     return UCS_OK;
 }
 
+
+// static ucs_status_t ucc_tl_mlx5_mcast_create_ah(ucc_tl_mlx5_mcast_coll_comm_t *comm)
+// {
+//     struct ibv_ah_attr ah_attr = {
+//         .is_global     = 1,
+//         .grh           = {.sgid_index = 0},
+//         .dlid          = comm->mcast_lid,
+//         .sl            = DEF_SL,
+//         .src_path_bits = DEF_SRC_PATH_BITS,
+//         .port_num      = comm->ctx->ib_port
+//     };
+
+//     memcpy(ah_attr.grh.dgid.raw, &comm->mgid, sizeof(ah_attr.grh.dgid.raw));
+
+//     comm->mcast.ah = ibv_create_ah(comm->ctx->pd, &ah_attr);
+//     if (!comm->mcast.ah) {
+//         tl_warn(comm->lib, "failed to create AH");
+//         return UCC_ERR_NO_RESOURCE;
+//     }
+//     return UCC_OK;
+// }
+
 ucs_status_t uct_ib_device_get_ah_cached(uct_ib_device_t *dev,
                                          struct ibv_ah_attr *ah_attr,
                                          struct ibv_ah **ah_p)

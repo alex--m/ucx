@@ -85,7 +85,7 @@ typedef struct ucf_listener              *ucf_listener_h;
   * necessary information to perform this read/write, so re-starting an
   * operation requires no additional parameters.
   */
-typedef void                            *ucf_io_h;
+typedef void                            *ucf_iop_h;
 
 /**
  * @ingroup UCF_FILE
@@ -95,14 +95,14 @@ typedef void                            *ucf_io_h;
  * "I/O operation" is completed. It is important to note that the call-back is
  * only invoked in a case when the operation cannot be completed in place.
  *
- * @param [in]  request   The completed collective operation request.
- * @param [in]  status    Completion status. If the send operation was completed
- *                        successfully UCX_OK is returned. If send operation was
- *                        canceled UCS_ERR_CANCELED is returned.
- *                        Otherwise, an @ref ucs_status_t "error status" is
- *                        returned.
+ * @param [in]  request The completed collective operation request.
+ * @param [in]  status  Completion status. If the send operation was completed
+ *                      successfully UCX_OK is returned. If send operation was
+ *                      canceled UCS_ERR_CANCELED is returned.
+ *                      Otherwise, an @ref ucs_status_t "error status" is
+ *                      returned.
  */
-typedef void (*ucf_io_callback_t)(void *request, ucs_status_t status);
+typedef void (*ucf_iop_callback_t)(void *request, ucs_status_t status);
 
 
 /**
@@ -111,12 +111,12 @@ typedef void (*ucf_io_callback_t)(void *request, ucs_status_t status);
  *
  * This routine would explicitly progress an I/O operation request.
  *
- * @param [in]  io      The I/O operation to be progressed.
+ * @param [in]  iop     The I/O operation to be progressed.
  *
  * @return Non-zero if any communication was progressed, zero otherwise.
  *
  */
-typedef unsigned (*ucf_io_progress_t)(ucf_io_h io);
+typedef unsigned (*ucf_iop_progress_t)(ucf_iop_h iop);
 
 
 #endif

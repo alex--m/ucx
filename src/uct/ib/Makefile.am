@@ -106,6 +106,7 @@ if HAVE_TL_UD
 noinst_HEADERS += \
 	ud/base/ud_iface_common.h \
 	ud/base/ud_iface.h \
+	ud/base/ud_mcast.h \
 	ud/base/ud_ep.h \
 	ud/base/ud_def.h \
 	ud/base/ud_inl.h \
@@ -118,6 +119,11 @@ libuct_ib_la_SOURCES += \
 	ud/base/ud_log.c \
 	ud/verbs/ud_verbs.c
 
+
+if HAVE_MCAST_COLL
+libuct_ib_la_SOURCES += ud/base/ud_mcast.c
+
+endif # HAVE_MCAST_COLL
 
 if HAVE_MLX5_HW_UD
 noinst_HEADERS += \

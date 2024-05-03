@@ -7,65 +7,17 @@
 #ifndef UCG_TEST_H_
 #define UCG_TEST_H_
 
-#define __STDC_LIMIT_MACROS
-
-#if _OPENMP
-#include "omp.h"
-#if ENABLE_MT
-#define MT_TEST_NUM_THREADS omp_get_max_threads()
-#else
-#define MT_TEST_NUM_THREADS 4
-#endif
-#endif
-
-#include <common/test.h>
-#include <vector>
-#include <memory>
-#include "ucg/builtin/plan/builtin_plan.h"
-#include "ucg/builtin/ops/builtin_ops.h"
-#include "ucg/base/ucg_group.h"
-#include "ucg/api/ucg_plan_component.h"
-#include "ucg/api/ucg.h"
-
-#include <common/test.h>
-
-#if _OPENMP
-#include "omp.h"
-#endif
+#include <ucp/ucp_test.h>
 
 /* UCG version compile time test */
 #if (UCG_API_VERSION != UCG_VERSION(UCG_API_MAJOR,UCG_API_MINOR))
 #error possible bug in UCG version
 #endif
-
-extern "C" {
-#include <ucg/api/ucg.h>
-}
-
-/* UCG version compile time test */
-#if (UCG_API_VERSION != UCG_VERSION(UCG_API_MAJOR,UCG_API_MINOR))
-#error possible bug in UCG version
-#endif
-
-struct ucg_test_param {
-    struct {
-        ucp_params_t          ucp;
-        ucg_params_t          ucg;
-    } ctx_params;
-
-    std::vector<std::string>  planners;
-
-    int                       thread_type;
-    ucg_group_member_index_t  group_size;
-    int                       variant;
-};
 
 typedef struct ucg_request {
     uintptr_t    is_complete;
     ucs_status_t status;
 } ucg_request_t;
-
-class ucg_test; // forward declaration
 
 template <typename T>
 class commmunicator_storage : public ucs::entities_storage<T> {
@@ -81,208 +33,97 @@ public:
     ucs::ptr_vector<T> m_comm;
 };
 
-class ucg_test_base : public ucs::test_base {
+class rank {
+    typedef std::vector<ucs::handle<ucg_group_h, rank*>> group_vec_t;
+
 public:
-    enum {
-        SINGLE_THREAD = 7,
-        MULTI_THREAD_CONTEXT, /* workers are single-threaded, context is mt-shared */
-        MULTI_THREAD_WORKER   /* workers are multi-threaded, cotnext is mt-single */
-    };
+    rank(const ucp_test_param& test_param, ucg_config_t* ucg_config,
+         const ucp_worker_params_t& worker_params,
+         const ucp_test_base* test_owner);
 
-    class rank {
-        typedef std::vector<ucs::handle<ucg_group_h, rank*>> group_vec_t;
+    ~rank();
 
-    public:
+    void groupify(const ucs::ptr_vector<rank>& ranks,
+                  const ucg_group_params_t& group_params,
+                  int group_idx = 0, int do_set_group = 1);
 
-        rank(const ucg_test_param& test_param, ucg_config_t* ucg_config,
-             const ucp_worker_params_t& worker_params,
-             const ucg_test_base* test_owner);
+    ucg_group_h group(int group_index = 0) const;
 
-        ~rank();
+    ucp_worker_h worker() const;
 
-        void groupify(const ucs::ptr_vector<rank>& ranks,
-                      const ucg_group_params_t& group_params,
-                      int group_idx = 0, int do_set_group = 1);
+    ucb_pipes_h pipes() const;
 
-        ucg_group_h group(int group_index = 0) const;
+    ucg_context_h ucgh() const;
 
-        ucp_worker_h worker() const;
+    int get_num_groups() const;
 
-        ucg_context_h ucgh() const;
+    unsigned worker_progress();
 
-        int get_num_groups() const;
+    void warn_existing_groups() const;
 
-        unsigned worker_progress();
+    void cleanup();
 
-        void warn_existing_groups() const;
+protected:
+    ucs::handle<ucg_context_h>      m_ucgh;
+    ucs::handle<ucp_worker_h>       m_worker;
+    ucs::handle<ucb_pipes_h>        m_pipes;
+    group_vec_t                     m_groups;
+    const ucp_test_base             *m_test;
 
-    protected:
-        ucs::handle<ucg_context_h>      m_ucgh;
-        ucs::handle<ucp_worker_h>       m_worker;
-        group_vec_t                     m_groups;
-
-    private:
-        void set_group(ucg_group_h group, int group_index);
-    };
-
-    static bool is_request_completed(ucg_request_t *req);
-};
-
-struct ucg_test_param {
-    struct {
-        ucp_params_t          ucp;
-        ucg_params_t          ucg;
-    } ctx_params;
-
-    std::vector<std::string>  planners;
-
-    int                       thread_type;
-    ucg_group_member_index_t  group_size;
-    int                       variant;
-};
-
-typedef struct ucg_request {
-    uintptr_t    is_complete;
-    ucs_status_t status;
-} ucg_request_t;
-
-class ucg_test; // forward declaration
-
-template <typename T>
-class commmunicator_storage : public ucs::entities_storage<T> {
-public:
-    const ucs::ptr_vector<T>& comm() const {
-        return m_comm;
-    }
-
-    T& get_rank(size_t idx) {
-        return m_comm.at(idx);
-    }
-
-    ucs::ptr_vector<T> m_comm;
-};
-
-class ucg_test_base : public ucs::test_base {
-public:
-    enum {
-        SINGLE_THREAD = 7,
-        MULTI_THREAD_CONTEXT, /* workers are single-threaded, context is mt-shared */
-        MULTI_THREAD_WORKER   /* workers are multi-threaded, cotnext is mt-single */
-    };
-
-    class rank {
-        typedef std::vector<ucs::handle<ucg_group_h, rank*>> group_vec_t;
-
-    public:
-
-        rank(const ucg_test_param& test_param, ucg_config_t* ucg_config,
-             const ucp_worker_params_t& worker_params,
-             const ucg_test_base* test_owner);
-
-        ~rank();
-
-        void groupify(const ucs::ptr_vector<rank>& ranks,
-                      const ucg_group_params_t& group_params,
-                      int group_idx = 0, int do_set_group = 1);
-
-        ucg_group_h group(int group_index = 0) const;
-
-        ucp_worker_h worker() const;
-
-        ucg_context_h ucgh() const;
-
-        int get_num_groups() const;
-
-        unsigned worker_progress();
-
-        void warn_existing_groups() const;
-
-    protected:
-        ucs::handle<ucg_context_h>      m_ucgh;
-        ucs::handle<ucp_worker_h>       m_worker;
-        group_vec_t                     m_groups;
-
-    private:
-        void set_group(ucg_group_h group, int group_index);
-    };
-
-    static bool is_request_completed(ucg_request_t *req);
+private:
+    void set_group(ucg_group_h group, int group_index);
 };
 
 /**
  * UCG test
  */
-class ucg_test : public ucg_test_base,
-                 public ::testing::TestWithParam<ucg_test_param>,
-                 public ::commmunicator_storage<ucg_test_base::rank> {
+class ucg_test : public ucp_test,
+                 public ::commmunicator_storage<rank> {
 
-    friend class ucg_test_base::rank;
+    friend class rank;
 
 public:
-    UCS_TEST_BASE_IMPL;
-
     ucg_test();
     virtual ~ucg_test();
 
     ucg_config_t* m_ucg_config;
 
-    static std::vector<ucg_test_param>
-    enum_test_params(const ucg_params_t& ucg_params,
-                     const ucp_params_t& ucp_params,
-                     const std::string& name,
-                     const std::string& test_case_name,
-                     const std::string& planners);
+    static std::vector<ucp_test_param>
+    enum_test_params(const std::vector<ucp_test_variant>& variants,
+                     const std::string& tls, const std::string& planners)
+    {
+        std::vector<ucp_test_param> result;
 
-    static ucg_params_t get_ucg_ctx_params();
-    static ucp_params_t get_ucp_ctx_params();
-    virtual ucp_worker_params_t get_worker_params();
+        if (!check_planners(planners)) {
+            return result;
+        }
+
+        return ucp_test::enum_test_params(variants, tls, planners);
+    }
+
     virtual ucg_group_params_t get_group_params(ucg_group_member_index_t index);
 
-    static void
-    generate_test_params_variant(const ucg_params_t& ucg_params,
-                                 const ucp_params_t& ucp_params,
-                                 const std::string& name,
-                                 const std::string& test_case_name,
-                                 const std::string& planners,
-                                 ucg_group_member_index_t group_size,
-                                 std::vector<ucg_test_param>& test_params);
-
-    virtual void modify_config(const std::string& name, const std::string& value,
-                               modify_config_mode_t mode = FAIL_IF_NOT_EXIST);
-    void stats_activate();
-    void stats_restore();
-
 private:
-    static void set_ucg_config(ucg_config_t *config,
-                               const ucg_test_param& test_param);
-    static bool check_test_param(const std::string& name,
-                                 const std::string& test_case_name,
-                                 const ucg_test_param& test_param);
-    ucs_status_t request_process(void *req, int worker_index, bool wait);
+    static void set_ucg_config(ucg_config_t *config, const std::string& planners);
+    static bool check_planners(const std::string& planners);
 
 protected:
+    typedef void (*get_variants_func_t)(std::vector<ucp_test_variant>&);
+
     virtual void init();
     virtual void cleanup();
     virtual bool has_planner(const std::string& planner_name) const;
     bool has_any_planner(const std::vector<std::string>& planner_names) const;
+    bool has_any_planner(const std::string *planners, size_t planner_size) const;
     rank* create_comm(bool add_in_front = false);
-    rank* create_comm(bool add_in_front, const ucg_test_param& test_param);
-    unsigned worker_progress() const;
-    ucs_status_t request_wait(ucg_request_t *req, int worker_index = 0);
+    rank* create_comm(bool add_in_front, const ucp_test_param& test_param);
     void set_ucg_config(ucg_config_t *config);
+    static void fill_ctx_params(ucx_params_t *params);
 };
 
 class test_ucg_group_base : public ucg_test {
 public:
-    test_ucg_group_base(unsigned nodes, unsigned ppn,
-                        ucg_group_member_index_t my_rank);
-    virtual ~test_ucg_group_base();
     virtual void create_comms(ucg_group_member_index_t group_size);
-
-protected:
-    ucp_worker_h       m_worker;
-    ucg_group_h        m_group; /* group object for my rank */
-    ucg_group_params_t m_group_params;
 };
 
 class test_ucg_coll_base : public test_ucg_group_base {
@@ -309,27 +150,38 @@ public:
     }
 
 protected:
-    ucg_op_t          *m_op;
-    ucg_plan_t        *m_plan;
+    ucg_coll_h        *m_op;
     ucg_group_params_t m_coll_params;
 };
 
-std::ostream& operator<<(std::ostream& os, const ucg_test_param& test_param);
+
+static inline ucs_status_t ucg_worker_create(ucg_context_h context,
+                                             const ucp_worker_params_t *params,
+                                             ucp_worker_h *worker_p)
+{
+    return ucp_worker_create(ucb_context_get_ucp(ucg_context_get_ucb(context)),
+                             params, worker_p);
+}
+
+
+class test_ucg_context : public ucg_test {
+public:
+    static void get_test_variants(std::vector<ucp_test_variant> &variants)
+    {
+        add_variant(variants, UCP_FEATURE_GROUPS);
+    }
+};
+
 
 /**
  * Instantiate the parameterized test case a combination of transports.
  *
  * @param _test_case   Test case class, derived from ucg_test.
- * @param _name        Instantiation name.
- * @param ...          Transport names.
+ * @param _planners    Instantiation name and also the name of the planner.
  */
-#define UCG_INSTANTIATE_TEST_CASE_PLANNERS(_test_case, _name, _planners) \
-    INSTANTIATE_TEST_CASE_P(_name,  _test_case, \
-                            testing::ValuesIn(_test_case::enum_test_params(_test_case::get_ucg_ctx_params(), \
-                                                                           _test_case::get_ucp_ctx_params(), \
-                                                                           #_name, \
-                                                                           #_test_case, \
-                                                                           _planners)));
+#define UCG_INSTANTIATE_TEST_CASE_PLANNERS(_test_case, _planners) \
+    INSTANTIATE_TEST_SUITE_P(_planners, _test_case, \
+                             testing::ValuesIn(enum_test_params<_test_case>("all", #_planners)));
 
 
 /**
@@ -338,6 +190,9 @@ std::ostream& operator<<(std::ostream& os, const ucg_test_param& test_param);
  * @param _test_case  Test case class, derived from ucg_test.
  */
 #define UCG_INSTANTIATE_TEST_CASE(_test_case) \
-    UCG_INSTANTIATE_TEST_CASE_PLANNERS(_test_case, builtin, "builtin")
+    UCG_INSTANTIATE_TEST_CASE_PLANNERS(_test_case, over_ucp) \
+    UCG_INSTANTIATE_TEST_CASE_PLANNERS(_test_case, over_uct) \
+    UCG_INSTANTIATE_TEST_CASE_PLANNERS(_test_case, over_ucb) \
+    UCG_INSTANTIATE_TEST_CASE_PLANNERS(_test_case, all)
 
 #endif

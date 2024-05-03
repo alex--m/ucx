@@ -3,9 +3,7 @@
 # See file LICENSE for terms.
 #
 
-if HAVE_UCF
-
-SUBDIRS = base builtin
+SUBDIRS = base over_ucg
 
 lib_LTLIBRARIES    = libucf.la
 libucf_la_CFLAGS   = $(BASE_CFLAGS)
@@ -17,22 +15,12 @@ libucf_la_LIBADD   = \
 	../ucs/libucs.la \
 	../uct/libuct.la \
 	../ucp/libucp.la \
-	base/libucf_base.la \
-	builtin/libucf_builtin.la
-	
-if HAVE_UCG
-
-SUBDIRS          += over_ucg
-libucf_la_LIBADD += \
 	../ucg/libucg.la \
+	base/libucf_base.la \
 	over_ucg/libucf_over_ucg.la
-
-endif # HAVE_UCG
 
 nobase_dist_libucf_la_HEADERS = \
 	api/ucf_def.h \
 	api/ucf_version.h \
 	api/ucf_posix.h \
 	api/ucf.h
-
-endif # HAVE_UCF

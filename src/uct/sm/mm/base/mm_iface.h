@@ -28,13 +28,9 @@ enum {
 
     /* Whether the element data is inline or in receive descriptor */
     UCT_MM_FIFO_ELEM_FLAG_INLINE = UCS_BIT(1),
-};
 
-typedef enum uct_mm_fifo_flag_state {
-    UCT_MM_FIFO_FLAG_STATE_CACHED_READY,
-    UCT_MM_FIFO_FLAG_STATE_CACHED_WAITING,
-    UCT_MM_FIFO_FLAG_STATE_UNCACHED
-} uct_mm_fifo_flag_state_t;
+#define UCT_MM_FIFO_ELEM_FLAG_SHIFT (2)
+};
 
 
 #define UCT_MM_FIFO_CTL_SIZE \
@@ -154,10 +150,16 @@ typedef struct uct_mm_desc_info {
  * MM FIFO element
  */
 typedef struct uct_mm_fifo_element {
-    volatile uint8_t          flags;          /* UCT_MM_FIFO_ELEM_FLAG_xx */
-    uint8_t                   am_id;          /* active message id */
-    uint16_t                  length;         /* length of actual data written
+    union {
+        struct {
+            volatile uint8_t  flags;          /* UCT_MM_FIFO_ELEM_FLAG_xx */
+            uint8_t           am_id;          /* active message id */
+            uint16_t          length;         /* length of actual data written
                                                  by producer */
+        };
+        volatile uint32_t     atomic;         /* used to ensure atomic access
+                                                 to the three fields above */
+    };
     uct_mm_desc_info_t        desc;           /* remote receive descriptor
                                                  parameters for am_bcopy */
     void                      *desc_data;     /* pointer to receive descriptor,
@@ -183,19 +185,18 @@ typedef struct uct_mm_recv_desc {
 
 
 typedef struct uct_mm_fifo_check {
-    uct_mm_fifo_flag_state_t flags_state;
-    uint8_t                  flags_cache;
-    uint8_t                  fifo_shift;  /* = log2(fifo_size) */
-    uint64_t                 read_index;  /* actual reading location */
-    uct_mm_fifo_element_t   *read_elem;
-    uct_mm_fifo_ctl_t       *fifo_ctl;    /* pointer to the struct at the
-                                           * beginning of the receive fifo
-                                           * which holds the head and the tail.
-                                           * this struct is cache line aligned
-                                           * and doesn't necessarily start where
-                                           * shared_mem starts. */
-
-    uint64_t                 fifo_release_factor_mask;
+    uint8_t                is_flag_cached;
+    uint8_t                flag_cache;
+    uint32_t               fifo_release_factor_mask;
+    unsigned               fifo_size;
+    uint64_t               read_index;  /* actual reading location */
+    uct_mm_fifo_element_t *read_elem;
+    uct_mm_fifo_ctl_t     *fifo_ctl;    /* pointer to the struct at the
+                                         * beginning of the receive fifo
+                                         * which holds the head and the tail.
+                                         * this struct is cache line aligned
+                                         * and doesn't necessarily start where
+                                         * shared_mem starts. */
 } uct_mm_fifo_check_t;
 
 
@@ -279,86 +280,173 @@ uct_mm_iface_query_tl_devices(uct_md_h md,
     UCT_MM_BASE_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
                           _cfg_prefix, _tl_suffix, _tl_suffix)
 
+#if HAVE_SM_COLL
+#if HAVE_SM_COLL_EXTRA
+#define UCT_MM_TL_INIT(_name, _scope, _init_code, _cleanup_code) \
+     UCT_MM_BASE_TL_INIT(_name##_locked_bcast,         _scope, _init_code, _cleanup_code) \
+     UCT_MM_BASE_TL_INIT(_name##_locked_incast,        _scope, _init_code, _cleanup_code) \
+     UCT_MM_BASE_TL_INIT(_name##_atomic_bcast,         _scope, _init_code, _cleanup_code) \
+     UCT_MM_BASE_TL_INIT(_name##_atomic_incast,        _scope, _init_code, _cleanup_code) \
+     UCT_MM_BASE_TL_INIT(_name##_hypothetic_bcast,     _scope, _init_code, _cleanup_code) \
+     UCT_MM_BASE_TL_INIT(_name##_hypothetic_incast,    _scope, _init_code, _cleanup_code) \
+     UCT_MM_BASE_TL_INIT(_name##_counted_slots_bcast,  _scope, _init_code, _cleanup_code) \
+     UCT_MM_BASE_TL_INIT(_name##_counted_slots_incast, _scope, _init_code, _cleanup_code) \
+     UCT_MM_BASE_TL_INIT(_name##_flagged_slots_bcast,  _scope, _init_code, _cleanup_code) \
+     UCT_MM_BASE_TL_INIT(_name##_flagged_slots_incast, _scope, _init_code, _cleanup_code) \
+     UCT_MM_BASE_TL_INIT(_name##_collaborative_bcast,  _scope, _init_code, _cleanup_code) \
+     UCT_MM_BASE_TL_INIT(_name##_collaborative_incast, _scope, _init_code, _cleanup_code) \
+     UCT_MM_BASE_TL_INIT(_name##_p2p, _scope, _init_code; \
+        uct_##_name##_scope##_locked_bcast_init(); \
+        uct_##_name##_scope##_locked_incast_init(); \
+        uct_##_name##_scope##_atomic_bcast_init(); \
+        uct_##_name##_scope##_atomic_incast_init(); \
+        uct_##_name##_scope##_hypothetic_bcast_init(); \
+        uct_##_name##_scope##_hypothetic_incast_init(); \
+        uct_##_name##_scope##_counted_slots_bcast_init(); \
+        uct_##_name##_scope##_counted_slots_incast_init(); \
+        uct_##_name##_scope##_flagged_slots_bcast_init(); \
+        uct_##_name##_scope##_flagged_slots_incast_init(); \
+        uct_##_name##_scope##_collaborative_bcast_init(); \
+        uct_##_name##_scope##_collaborative_incast_init(), \
+        uct_##_name##_scope##_locked_bcast_cleanup(); \
+        uct_##_name##_scope##_locked_incast_cleanup(); \
+        uct_##_name##_scope##_atomic_bcast_cleanup(); \
+        uct_##_name##_scope##_atomic_incast_cleanup(); \
+        uct_##_name##_scope##_hypothetic_bcast_cleanup(); \
+        uct_##_name##_scope##_hypothetic_incast_cleanup(); \
+        uct_##_name##_scope##_counted_slots_bcast_cleanup(); \
+        uct_##_name##_scope##_counted_slots_incast_cleanup(); \
+        uct_##_name##_scope##_flagged_slots_bcast_cleanup(); \
+        uct_##_name##_scope##_flagged_slots_incast_cleanup(); \
+        uct_##_name##_scope##_collaborative_bcast_cleanup(); \
+        uct_##_name##_scope##_collaborative_incast_cleanup(); \
+        _cleanup_code)
+
+#define UCT_MM_COLL_TLS_DEFINE(_name, _md_ops, _rkey_unpack, \
+                               _rkey_release, _cfg_prefix) \
+    UCT_MM_COLL_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
+                          _cfg_prefix "LOK_BCAST_", _locked_bcast) \
+    UCT_MM_COLL_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
+                          _cfg_prefix "LOK_INCAST_", _locked_incast) \
+    UCT_MM_COLL_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
+                          _cfg_prefix "ATM_BCAST_", _atomic_bcast) \
+    UCT_MM_COLL_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
+                          _cfg_prefix "ATM_INCAST_", _atomic_incast) \
+    UCT_MM_COLL_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
+                          _cfg_prefix "HPT_BCAST_", _hypothetic_bcast) \
+    UCT_MM_COLL_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
+                          _cfg_prefix "HPT_INCAST_", _hypothetic_incast) \
+    UCT_MM_COLL_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
+                          _cfg_prefix "CTS_BCAST_", _counted_slots_bcast) \
+    UCT_MM_COLL_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
+                          _cfg_prefix "CTS_INCAST_", _counted_slots_incast) \
+    UCT_MM_COLL_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
+                          _cfg_prefix "FLS_BCAST_", _flagged_slots_bcast) \
+    UCT_MM_COLL_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
+                          _cfg_prefix "FLS_INCAST_", _flagged_slots_incast) \
+    UCT_MM_COLL_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
+                          _cfg_prefix "COL_BCAST_", _collaborative_bcast) \
+    UCT_MM_COLL_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
+                          _cfg_prefix "COL_INCAST_", _collaborative_incast)
+#else
+#define UCT_MM_TL_INIT(_name, _scope, _init_code, _cleanup_code) \
+     UCT_MM_BASE_TL_INIT(_name##_flagged_slots_bcast,  _scope, _init_code, _cleanup_code) \
+     UCT_MM_BASE_TL_INIT(_name##_flagged_slots_incast, _scope, _init_code, _cleanup_code) \
+     UCT_MM_BASE_TL_INIT(_name##_collaborative_bcast,  _scope, _init_code, _cleanup_code) \
+     UCT_MM_BASE_TL_INIT(_name##_collaborative_incast, _scope, _init_code, _cleanup_code) \
+     UCT_MM_BASE_TL_INIT(_name##_p2p, _scope, _init_code; \
+        uct_##_name##_scope##_flagged_slots_bcast_init(); \
+        uct_##_name##_scope##_flagged_slots_incast_init(); \
+        uct_##_name##_scope##_collaborative_bcast_init(); \
+        uct_##_name##_scope##_collaborative_incast_init(), \
+        uct_##_name##_scope##_flagged_slots_bcast_cleanup(); \
+        uct_##_name##_scope##_flagged_slots_incast_cleanup(); \
+        uct_##_name##_scope##_collaborative_bcast_cleanup(); \
+        uct_##_name##_scope##_collaborative_incast_cleanup(); \
+        _cleanup_code)
+
+#define UCT_MM_COLL_TLS_DEFINE(_name, _md_ops, _rkey_unpack, \
+                              _rkey_release, _cfg_prefix) \
+    UCT_MM_COLL_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
+                          _cfg_prefix "FLS_BCAST_", _flagged_slots_bcast) \
+    UCT_MM_COLL_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
+                          _cfg_prefix "FLS_INCAST_", _flagged_slots_incast) \
+    UCT_MM_COLL_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
+                          _cfg_prefix "COL_BCAST_", _collaborative_bcast) \
+    UCT_MM_COLL_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
+                          _cfg_prefix "COL_INCAST_", _collaborative_incast)
+#endif
+#else
+#define UCT_MM_TL_INIT(_name, _scope, _init_code, _cleanup_code) \
+     UCT_MM_BASE_TL_INIT(_name##_p2p, _scope, _init_code, _cleanup_code)
+
+#define UCT_MM_COLL_TLS_DEFINE(_name, _md_ops, _rkey_unpack, \
+                               _rkey_release, _cfg_prefix)
+#endif
+
 #define UCT_MM_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
                          _cfg_prefix) \
     UCT_TL_DECL(_name##_p2p) \
     UCT_MM_BASE_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
                           _cfg_prefix, , _p2p) \
-    UCT_MM_COLL_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
-                          _cfg_prefix "BCAST_", _batched_bcast) \
-    UCT_MM_COLL_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
-                          _cfg_prefix "INCAST_", _batched_incast) \
-    UCT_MM_COLL_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
-                          _cfg_prefix "IM_BCAST_", _imbalanced_bcast) \
-    UCT_MM_COLL_TL_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
-                          _cfg_prefix "IM_INCAST_", _imbalanced_incast)
+    UCT_MM_COLL_TLS_DEFINE(_name, _md_ops, _rkey_unpack, _rkey_release, \
+                           _cfg_prefix)
 
 #define UCT_MM_BASE_TL_INIT(_name, _scope, _init_code, _cleanup_code) \
      UCT_SINGLE_TL_INIT(&UCT_COMPONENT_NAME(_name).super, _name, _scope, \
                         _init_code, _cleanup_code) \
 
-#define UCT_MM_TL_INIT(_name, _scope, _init_code, _cleanup_code) \
-     UCT_MM_BASE_TL_INIT(_name##_batched_bcast,     _scope, _init_code, _cleanup_code) \
-     UCT_MM_BASE_TL_INIT(_name##_batched_incast,    _scope, _init_code, _cleanup_code) \
-     UCT_MM_BASE_TL_INIT(_name##_imbalanced_bcast,  _scope, _init_code, _cleanup_code) \
-     UCT_MM_BASE_TL_INIT(_name##_imbalanced_incast, _scope, _init_code, _cleanup_code) \
-     UCT_MM_BASE_TL_INIT(_name##_p2p, _scope, _init_code; \
-        uct_##_name##_scope##_batched_bcast_init(); \
-        uct_##_name##_scope##_batched_incast_init(); \
-        uct_##_name##_scope##_imbalanced_bcast_init(); \
-        uct_##_name##_scope##_imbalanced_incast_init(), \
-        uct_##_name##_scope##_batched_bcast_cleanup(); \
-        uct_##_name##_scope##_batched_incast_cleanup(); \
-        uct_##_name##_scope##_imbalanced_bcast_cleanup(); \
-        uct_##_name##_scope##_imbalanced_incast_cleanup(); \
-        _cleanup_code)
-
-
 extern ucs_config_field_t uct_mm_iface_config_table[];
 extern ucs_config_field_t uct_mm_coll_iface_config_table[];
 typedef struct uct_mm_bcast_iface_config uct_mm_base_bcast_iface_config_t,
-                                         uct_mm_batched_bcast_iface_config_t,
-                                         uct_mm_imbalanced_bcast_iface_config_t;
+#if HAVE_SM_COLL_EXTRA
+                                         uct_mm_locked_bcast_iface_config_t,
+                                         uct_mm_atomic_bcast_iface_config_t,
+                                         uct_mm_hypothetic_bcast_iface_config_t,
+                                         uct_mm_counted_slots_bcast_iface_config_t,
+#endif
+                                         uct_mm_flagged_slots_bcast_iface_config_t,
+                                         uct_mm_collaborative_bcast_iface_config_t;
 typedef struct uct_mm_incast_iface_config uct_mm_base_incast_iface_config_t,
-                                          uct_mm_batched_incast_iface_config_t,
-                                          uct_mm_imbalanced_incast_iface_config_t;
+#if HAVE_SM_COLL_EXTRA
+                                          uct_mm_locked_incast_iface_config_t,
+                                          uct_mm_atomic_incast_iface_config_t,
+                                          uct_mm_hypothetic_incast_iface_config_t,
+                                          uct_mm_counted_slots_incast_iface_config_t,
+#endif
+                                          uct_mm_flagged_slots_incast_iface_config_t,
+                                          uct_mm_collaborative_incast_iface_config_t;
 
 static UCS_F_ALWAYS_INLINE int
-uct_mm_iface_fifo_flag_no_new_data(uint8_t flags,
-                                   uint64_t read_index,
-                                   uint8_t fifo_shift)
+uct_mm_iface_fifo_flag_no_new_data(uint8_t flags, uint64_t index, uint64_t mask)
 {
-    return (((read_index >> fifo_shift) & 1) !=
-            (UCT_MM_FIFO_ELEM_FLAG_OWNER & flags));
+    return (((index & mask) != 0) != (UCT_MM_FIFO_ELEM_FLAG_OWNER & flags));
 }
 
 static UCS_F_ALWAYS_INLINE int
-uct_mm_iface_fifo_has_new_data(uct_mm_fifo_check_t *check_info,
-                               uct_mm_fifo_element_t *read_elem)
+uct_mm_iface_fifo_has_new_data(uct_mm_fifo_check_t *check_info, int is_locked)
 {
-    uint8_t flags;
+    uct_mm_fifo_element_t *elem = check_info->read_elem;
+    uint8_t flags               = elem->flags;
 
-    switch (check_info->flags_state) {
-    case UCT_MM_FIFO_FLAG_STATE_CACHED_READY:
-        return 1;
-
-    case UCT_MM_FIFO_FLAG_STATE_CACHED_WAITING:
-        if (ucs_likely(check_info->flags_cache == read_elem->flags)) {
+    if (check_info->is_flag_cached) {
+        if (ucs_likely(check_info->flag_cache == flags)) {
             return 0;
         }
-        break;
-
-    case UCT_MM_FIFO_FLAG_STATE_UNCACHED:
-        break;
+        if (!is_locked) {
+            return 1;
+        }
     }
 
-    /* check the read_index to see if there is a new item to read (checking the owner bit) */
-    flags = read_elem->flags;
-    if (uct_mm_iface_fifo_flag_no_new_data(flags,
-                                           check_info->read_index,
-                                           check_info->fifo_shift)) {
-        check_info->flags_state = UCT_MM_FIFO_FLAG_STATE_CACHED_WAITING;
-        check_info->flags_cache = flags;
+    /* Check the read_index to see if there is a new item to read */
+    if (uct_mm_iface_fifo_flag_no_new_data(flags, check_info->read_index,
+                                           check_info->fifo_size)) {
+        if (!is_locked) {
+            return 1;
+        }
+
+        check_info->is_flag_cached = 1;
+        check_info->flag_cache     = flags;
         return 0;
     }
 
@@ -414,15 +502,24 @@ uct_mm_iface_fifo_window_adjust(uct_mm_base_iface_t *iface,
     }
 }
 
+static UCS_F_ALWAYS_INLINE int
+uct_mm_progress_fifo_test(uct_mm_fifo_check_t *recv_check, int inc_read_index)
+{
+    uint64_t read_index = recv_check->read_index;
+
+    if (inc_read_index) {
+        read_index++;
+    }
+
+    /* don't progress the tail every time - release in batches. improves performance */
+    return (read_index & recv_check->fifo_release_factor_mask) == 0;
+}
+
 static UCS_F_ALWAYS_INLINE void
 uct_mm_progress_fifo_tail(uct_mm_fifo_check_t *recv_check)
 {
-    ucs_prefetch(recv_check->read_elem);
-
-    recv_check->flags_state = UCT_MM_FIFO_FLAG_STATE_UNCACHED;
-
     /* don't progress the tail every time - release in batches. improves performance */
-    if (recv_check->read_index & recv_check->fifo_release_factor_mask) {
+    if (!uct_mm_progress_fifo_test(recv_check, 0)) {
         return;
     }
 
@@ -446,8 +543,9 @@ void uct_mm_iface_set_fifo_ptrs(void *fifo_mem, uct_mm_fifo_ctl_t **fifo_ctl_p,
 UCS_CLASS_DECLARE_NEW_FUNC(uct_mm_iface_t, uct_iface_t, uct_md_h, uct_worker_h,
                            const uct_iface_params_t*, const uct_iface_config_t*);
 
-UCS_CLASS_DECLARE(uct_mm_base_iface_t, uct_iface_ops_t*, uct_md_h, uct_worker_h,
-                  const uct_iface_params_t*, const uct_iface_config_t*);
+UCS_CLASS_DECLARE(uct_mm_base_iface_t, uct_iface_ops_t*, uct_iface_internal_ops_t*,
+                  uct_md_h, uct_worker_h, const uct_iface_params_t*,
+                  const uct_iface_config_t*);
 
 UCS_CLASS_DECLARE(uct_mm_iface_t, uct_md_h, uct_worker_h,
                   const uct_iface_params_t*, const uct_iface_config_t*);
@@ -469,9 +567,10 @@ ucs_status_t uct_mm_iface_query(uct_iface_h tl_iface,
 ucs_status_t uct_mm_iface_get_address(uct_iface_t *tl_iface,
                                       uct_iface_addr_t *addr);
 
-int uct_mm_iface_is_reachable(const uct_iface_h tl_iface,
-                              const uct_device_addr_t *dev_addr,
-                              const uct_iface_addr_t *tl_iface_addr);
+ucs_status_t uct_mm_estimate_perf(uct_iface_h tl_iface, uct_perf_attr_t *perf_attr);
+
+int uct_mm_iface_is_reachable_v2(const uct_iface_h tl_iface,
+                                 const uct_iface_is_reachable_params_t *params);
 
 unsigned uct_mm_iface_progress(uct_iface_h tl_iface);
 

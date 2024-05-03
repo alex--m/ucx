@@ -8,6 +8,9 @@
 
 #define __STDC_LIMIT_MACROS
 #include <ucp/api/ucp.h>
+#include <ucb/api/ucb.h>
+#include <ucg/api/ucg.h>
+#include <ucf/api/ucf.h>
 #include <ucs/time/time.h>
 #include <common/mem_buffer.h>
 
@@ -36,9 +39,17 @@ struct ucp_test_variant_value {
 };
 
 
+typedef struct ucx_params {
+    ucp_params_t                        ucp; /* UCP context parameters */
+    ucb_params_t                        ucb; /* UCB context parameters */
+    ucg_params_t                        ucg; /* UCG context parameters */
+    ucf_params_t                        ucf; /* UCF context parameters */
+} ucx_params_t;
+
+
 /* Specifies extended test parameter */
 struct ucp_test_variant {
-    ucp_params_t                        ctx_params;  /* UCP context parameters */
+    ucx_params_t                        ctx_params;  /* Context-creation params */
     int                                 thread_type; /* Thread mode */
     std::vector<ucp_test_variant_value> values;      /* Extended test parameters */
 };
@@ -48,7 +59,8 @@ struct ucp_test_variant {
  * define extended parameters by adding values to 'variant'
  */
 struct ucp_test_param {
-    std::vector<std::string>            transports;  /* Transports to test */
+    std::vector<std::string>            transports;  /* UCT Transports to test */
+    std::vector<std::string>            planners;    /* UCG Planners to test */
     ucp_test_variant                    variant;     /* Test variant */
 };
 
@@ -210,7 +222,7 @@ public:
 
     static std::vector<ucp_test_param>
     enum_test_params(const std::vector<ucp_test_variant>& variants,
-                     const std::string& tls);
+                     const std::string& tls, const std::string& planners);
 
     virtual ucp_worker_params_t get_worker_params();
     virtual ucp_ep_params_t get_ep_params();
@@ -279,6 +291,11 @@ protected:
     // Add test variant without values, with given context params
     static ucp_test_variant&
     add_variant(std::vector<ucp_test_variant>& variants,
+                const ucx_params_t& ctx_params, int thread_type = SINGLE_THREAD);
+
+    // Add test variant without values, with given context params
+    static ucp_test_variant&
+    add_variant(std::vector<ucp_test_variant>& variants,
                 const ucp_params_t& ctx_params, int thread_type = SINGLE_THREAD);
 
     // Add test variant without values, with given context features
@@ -290,6 +307,13 @@ protected:
     static void
     add_variant_value(std::vector<ucp_test_variant_value>& values,
                       int value, const std::string& name);
+
+    // Add test variant with context params and single value
+    static void
+    add_variant_with_value(std::vector<ucp_test_variant>& variants,
+                           const ucx_params_t& ctx_params, int value,
+                           const std::string& name,
+                           int thread_type = SINGLE_THREAD);
 
     // Add test variant with context params and single value
     static void
@@ -331,7 +355,7 @@ protected:
     int get_variant_thread_type() const;
 
     // Return context parameters of the current test variant
-    const ucp_params_t& get_variant_ctx_params() const;
+    const ucx_params_t* get_variant_ctx_params() const;
 
     // Return maximal UCP threads in current environment, assuming each thread
     // can create 2 workers
@@ -396,12 +420,22 @@ std::ostream& operator<<(std::ostream& os,
 std::ostream& operator<<(std::ostream& os, const ucp_test_param& test_param);
 
 template <class T>
+std::vector<ucp_test_param> enum_test_params(const std::string& tls,
+                                             const std::string& planners)
+{
+    std::vector<ucp_test_variant> v;
+
+    T::get_test_variants(v);
+    return T::enum_test_params(v, tls, planners);
+}
+
+template <class T>
 std::vector<ucp_test_param> enum_test_params(const std::string& tls)
 {
     std::vector<ucp_test_variant> v;
 
     T::get_test_variants(v);
-    return T::enum_test_params(v, tls);
+    return T::enum_test_params(v, tls, "");
 }
 
 /**

@@ -195,6 +195,10 @@ struct ucp_config {
     UCS_CONFIG_STRING_ARRAY_FIELD(cm_tls)  sockaddr_cm_tls;
     /** Warn on invalid configuration */
     int                                    warn_invalid_config;
+    struct {
+    /** This config environment prefix ("super" is for compatibility) */
+    char                                   *env_prefix;
+    } super;
     /** Array of worker memory pool sizes */
     UCS_CONFIG_ARRAY_FIELD(size_t, memunits) mpool_sizes;
     /** Memory registration cache */
@@ -228,7 +232,7 @@ typedef struct ucp_tl_resource_desc {
  */
 typedef struct ucp_tl_alias {
     const char                    *alias;   /* Alias name */
-    const char*                   tls[8];   /* Transports which are selected by the alias */
+    const char*                   tls[16];   /* Transports which are selected by the alias */
 } ucp_tl_alias_t;
 
 

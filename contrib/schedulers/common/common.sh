@@ -1,5 +1,5 @@
 # Path for executables (OMPI, UCX and OSU)
-export BUILD_PATH=.
+#export BUILD_PATH=$PWD
 
 # Maximal number of processes per node (typically equal to the number of cores per node)
 export MAX_PPN=24

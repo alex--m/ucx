@@ -10,7 +10,7 @@ SUBDIRS = . cuda ib rocm sm ugni
 
 lib_LTLIBRARIES    = libuct.la
 libuct_la_CFLAGS   = $(BASE_CFLAGS)
-libuct_la_CPPFLAGS = $(BASE_CPPFLAGS)
+libuct_la_CPPFLAGS = $(BASE_CPPFLAGS) -Wno-address-of-packed-member --param=max-vartrack-size=2000000000
 libuct_la_LIBADD   = $(top_builddir)/src/ucs/libucs.la
 libuct_la_LDFLAGS  = -ldl -version-info $(SOVERSION)
 libuct_ladir       = $(includedir)/uct
@@ -38,8 +38,6 @@ noinst_HEADERS = \
 	sm/mm/base/mm_md.h \
 	sm/scopy/base/scopy_iface.h \
 	sm/scopy/base/scopy_ep.h \
-	sm/mm/coll/mm_coll_iface.h \
-	sm/mm/coll/mm_coll_ep.h \
 	sm/self/self.h \
 	tcp/tcp_base.h \
 	tcp/tcp.h \
@@ -64,10 +62,6 @@ libuct_la_SOURCES = \
 	sm/mm/base/mm_iface.c \
 	sm/mm/base/mm_ep.c \
 	sm/mm/base/mm_md.c \
-	sm/mm/coll/mm_coll_ep.c \
-	sm/mm/coll/mm_coll_iface.c \
-	sm/mm/coll/mm_coll_bcast.c \
-	sm/mm/coll/mm_coll_incast.c \
 	sm/mm/posix/mm_posix.c \
 	sm/mm/sysv/mm_sysv.c \
 	sm/scopy/base/scopy_iface.c \
@@ -82,6 +76,18 @@ libuct_la_SOURCES = \
 	tcp/tcp_sockcm.c \
 	tcp/tcp_listener.c \
 	tcp/tcp_sockcm_ep.c
+
+if HAVE_SM_COLL
+noinst_HEADERS += \
+	sm/mm/coll/mm_coll_ep.h \
+	sm/mm/coll/mm_coll_iface.h
+
+libuct_la_SOURCES += \
+	sm/mm/coll/mm_coll_ep.c \
+	sm/mm/coll/mm_coll_iface.c \
+	sm/mm/coll/mm_coll_bcast.c \
+	sm/mm/coll/mm_coll_incast.c
+endif # HAVE_SM_COLL
 
 PKG_CONFIG_NAME=uct
 

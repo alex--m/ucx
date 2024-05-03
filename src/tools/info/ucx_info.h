@@ -13,13 +13,9 @@
 
 #include <ucs/sys/sock.h>
 #include <uct/api/uct.h>
-#include <ucp/api/ucp.h>
-#if ENABLE_UCG
-#include <ucg/api/ucg.h>
-#endif
+#include <ucf/api/ucf.h>
 
 #include <arpa/inet.h>
-
 
 enum {
     PRINT_VERSION        = UCS_BIT(0),
@@ -57,22 +53,16 @@ void print_uct_info(int print_opts, ucs_config_print_flags_t print_flags,
 void print_type_info(const char * tl_name);
 
 ucs_status_t
-print_ucp_info(int print_opts, ucs_config_print_flags_t print_flags,
+print_ucx_info(int print_opts, ucs_config_print_flags_t print_flags,
                uint64_t ctx_features, const ucp_ep_params_t *base_ep_params,
                size_t estimated_num_eps, size_t estimated_num_ppn,
                unsigned dev_type_bitmap, process_placement_t proc_placement,
-               const char *mem_spec, const char *ip_addr, sa_family_t af
-#if ENABLE_UCG
-               ,const char *planner_name,
+               const char *mem_spec, const char *ip_addr, sa_family_t af,
                ucg_group_member_index_t root_index,
                ucg_group_member_index_t my_index,
-               const char *collective_type_name,
-               size_t dtype_count,
-               ucg_group_member_index_t peer_count[UCG_GROUP_MEMBER_DISTANCE_UNKNOWN]
-#endif
-               );
+               const char *collective_type_name, size_t dtype_count,
+               ucg_group_member_index_t peer_count[4]);
 
-#if ENABLE_UCG
 int dummy_resolve_address(void *cb_group_obj,
                           ucg_group_member_index_t index,
                           ucp_address_t **addr, size_t *addr_len);
@@ -84,11 +74,9 @@ ucs_status_t gen_ucg_topology(ucg_group_member_index_t me,
         enum ucg_group_member_distance **distance_array_p,
         ucg_group_member_index_t *distance_array_length_p);
 
-void print_ucg_topology(const char *req_planner_name, ucp_worker_h worker,
-        ucg_group_member_index_t root, ucg_group_member_index_t me,
-        const char *collective_type_name, size_t dtype_count,
-        enum ucg_group_member_distance *distance_array,
+void print_ucg_topology(ucp_worker_h worker, ucg_group_member_index_t root,
+        ucg_group_member_index_t me, const char *collective_type_name,
+        size_t dtype_count, enum ucg_group_member_distance *distance_array,
         ucg_group_member_index_t member_count, int is_verbose);
-#endif
 
 #endif

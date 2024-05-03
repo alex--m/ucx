@@ -66,34 +66,14 @@ enum uct_am_trace_type {
  * @ref uct_tag_unexp_eager_cb_t callback only. The former value indicates that
  * the data is the first fragment of the message. The latter value means that
  * more fragments of the message yet to be delivered.
- *
- * UCT_CB_PARAM_FLAG_SHARED is used to indicate that the descriptor (see details
- * on UCT_CB_PARAM_FLAG_DESC) is "shared" with other peers, and so must only be
- * released by using a dedicated function from that interface. A call to UCT's
- * @ref uct_iface_release_shared_desc() must be used instead of the default
- * @ref uct_iface_release_desc() on descriptors given with this flag enabled.
- *
- * UCT_CB_PARAM_FLAG_STRIDE is typically used for aggregating messages. If this
- * flag is on, the "length" field of the callback should be interpreted as the
- * size of the stride between two consecutive messages in the given data buffer.
- * More specifically, "length" is the distance between the first byte of message
- * N and the first byte of message N+1 (message N=0 starts at the beginning of
- * the given data buffer). The size of each message (which may vary between
- * messages in the same buffer), as well as the number of messages given, is not
- * specified by the callback if this flag is enabled - the receiver is expected
- * to coordinate this information beforehand, or make some assumptions and get
- * this information from the data buffer itself.
  */
 enum uct_cb_param_flags {
     UCT_CB_PARAM_FLAG_DESC    = UCS_BIT(0),
     UCT_CB_PARAM_FLAG_FIRST   = UCS_BIT(1),
     UCT_CB_PARAM_FLAG_MORE    = UCS_BIT(2),
-    UCT_CB_PARAM_FLAG_SHARED  = UCS_BIT(3),
-    UCT_CB_PARAM_FLAG_STRIDE  = UCS_BIT(4),
-    UCT_CB_PARAM_FLAG_SHIFTED = UCS_BIT(5),
+    UCT_CB_PARAM_FLAG_TIMED   = UCS_BIT(3),
 
-    UCT_CB_PARAM_FLAG_LAST    = UCS_BIT(6),
-    UCT_CB_PARAM_FLAG_SHIFT   = 6
+    UCT_CB_PARAM_FLAG_LAST    = UCS_BIT(4)
 };
 
 /**
@@ -125,6 +105,7 @@ typedef struct uct_iface_addr        uct_iface_addr_t;
 typedef struct uct_ep_addr           uct_ep_addr_t;
 typedef struct uct_ep_params         uct_ep_params_t;
 typedef struct uct_ep_connect_params uct_ep_connect_params_t;
+typedef struct uct_cm_mcast_attr     uct_cm_mcast_attr_t;
 typedef struct uct_cm_attr           uct_cm_attr_t;
 typedef struct uct_cm                uct_cm_t;
 typedef uct_cm_t                     *uct_cm_h;
@@ -925,12 +906,28 @@ typedef void (*uct_async_event_cb_t)(void *arg, unsigned flags);
 
 /**
  * @ingroup UCT_AM
- * @brief Callback for incast (reduction) operations.
+ * @brief External callback for reduction operations.
  *
- * @param [inout]  dst      Destination buffer for the incast (reduction).
- * @param [in]     src      Source buffer for the incast (reduction).
+ * @param [in]     operator Operation type to use for aggregating two buffers.
+ * @param [in]     src      Source buffer for the reduction.
+ * @param [inout]  dst      Destination buffer for the reduction.
+ * @param [in]     count    Number of elements to reduce (may not be length).
+ * @param [in]     datatype Custom user-defined argument.
+ * @param [in]     md       Memory domain handle.
  */
-typedef void (*uct_incast_cb_t)(void *dst, const void *src);
+typedef int (*uct_reduction_external_cb_t)(void *operator_, const void *src,
+                                           void *dst, unsigned count,
+                                           void *datatype, uct_md_h md);
 
+/**
+ * @ingroup UCT_AM
+ * @brief Internal callback for reduction operations.
+ *
+ * @param [inout]  dst      Destination buffer for the reduction.
+ * @param [in]     src      Source buffer for the reduction (possible indirect).
+ * @param [in]     length   Length of the buffer (not always available/filled).
+ */
+typedef size_t (*uct_reduction_internal_cb_t)(void *dst, const void *src,
+                                              size_t length);
 
 #endif

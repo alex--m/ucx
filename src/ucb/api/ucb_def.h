@@ -52,16 +52,15 @@ typedef struct ucb_context               *ucb_context_h;
 typedef struct ucb_config                ucb_config_t;
 
 
-/**
- * @ingroup UCB_WORKER
- * @brief UCB File
- *
- * UCB worker is an opaque object representing a set of connected remote workers.
- * This object is used for batch operations - like the ones defined by the
- * Message Passing Interface (MPI). Groups are created with respect to a local
- * worker, and share its endpoints for communication with the remote workers.
- */
-typedef struct ucb_worker                  *ucb_worker_h;
+ /**
+  * @ingroup UCB_PIPES
+  * @brief UCB Pipes
+  *
+  * UCB pipes is an opaque object representing a set of connected transports.
+  * This object is used for creating batches, by stacking serveral requests to
+  * be triggered by events on these transports.
+  */
+typedef struct ucb_pipes                *ucb_pipes_h;
 
 
 /**
@@ -83,6 +82,7 @@ typedef void                            *ucb_batch_h;
  * @brief UCB batch operation identifier
  */
 typedef uint64_t                         ucb_batch_id_t;
+
 
 /**
  * @ingroup UCB_WORKER

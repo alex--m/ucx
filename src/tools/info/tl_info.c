@@ -130,14 +130,12 @@ static void print_iface_info(uct_worker_h worker, uct_md_h md,
                                 UCT_IFACE_PARAM_FIELD_DEVICE      |
                                 UCT_IFACE_PARAM_FIELD_STATS_ROOT  |
                                 UCT_IFACE_PARAM_FIELD_RX_HEADROOM |
-                                UCT_IFACE_PARAM_FIELD_COLL_INFO,
+                                UCT_IFACE_PARAM_FIELD_GROUP_INFO,
         .open_mode            = UCT_IFACE_OPEN_MODE_DEVICE,
         .mode.device.tl_name  = resource->tl_name,
         .mode.device.dev_name = resource->dev_name,
-        .host_info.proc_cnt   = 2,
-        .host_info.proc_idx   = 0,
-        .global_info.proc_cnt = 2,
-        .global_info.proc_idx = 0,
+        .group_info.proc_cnt  = 2,
+        .group_info.proc_idx  = 0,
         .stats_root           = ucs_stats_get_root(),
         .rx_headroom          = 0
     };

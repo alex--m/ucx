@@ -843,7 +843,7 @@ UCS_TEST_P(test_ucp_wireup_2sided, no_loopback_with_delay) {
 }
 
 UCS_TEST_SKIP_COND_P(test_ucp_wireup_2sided, async_connect,
-                     !(get_variant_ctx_params().features & UCP_FEATURE_TAG)) {
+                     !(get_variant_ctx_params()->ucp.features & UCP_FEATURE_TAG)) {
     sender().connect(&receiver(), get_ep_params());
     ucp_ep_h send_ep = sender().ep();
     std::vector<void *> reqs;

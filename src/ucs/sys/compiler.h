@@ -84,4 +84,40 @@
 #define UCS_CACHELINE_PADDING_MISALIGN(...) \
     ((UCS_PP_FOREACH(UCS_CACHELINE_PADDING_SIZEOF, _, __VA_ARGS__)) % UCS_SYS_CACHE_LINE_SIZE)
 
+/*
+ * The set of macros below provide a best-effort acceleration for large switch-
+ * case blocks.
+ */
+
+#if ENABLE_JUMP_TABLES
+
+/*
+ *_label_diff_list below expects a comma-delimited list of label differences,
+ * for example:   &&foo - &&foo, &&bar - &&foo, &&hack - &&foo
+ */
+#define UCS_JUMPTBL_INIT(_name, _label_diff_list) \
+	static const int _name[] = { _label_diff_list };
+
+#define UCS_JUMPTBL_JUMP(_name, _label_number, _first_label) \
+	goto *(&&_first_label + _name[_label_number]); \
+	_first_label:
+
+#define UCS_JUMPTBL_LABEL(_label_name) _label_name :
+
+#define UCS_JUMPTBL_LABEL_TERMINATOR(_last_label) _last_label:
+
+#else
+
+#define UCS_JUMPTBL_INIT(_name, _label_diff_list) \
+	unsigned _##_name = UCS_PP_UNIQUE_ID;
+
+#define UCS_JUMPTBL_JUMP(_name, _label_number, _first_label) \
+	switch (_##_name + _label_number + 1) {
+
+#define UCS_JUMPTBL_LABEL(_label_name) case UCS_PP_UNIQUE_ID:
+
+#define UCS_JUMPTBL_LABEL_TERMINATOR(_last_label) } _last_label:
+
+#endif
+
 #endif

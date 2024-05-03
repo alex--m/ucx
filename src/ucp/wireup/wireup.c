@@ -1157,6 +1157,7 @@ ucp_wireup_connect_lane_to_ep(ucp_ep_h ep, unsigned ep_init_flags,
 
 static ucs_status_t
 ucp_wireup_connect_lane(ucp_ep_h ep, unsigned ep_init_flags,
+                        ucp_tl_bitmap_t tl_bitmap, unsigned iface_tl_base,
                         ucp_lane_index_t lane, unsigned path_index,
                         const ucp_unpacked_address_t *remote_address,
                         unsigned addr_index)
@@ -1175,8 +1176,8 @@ ucp_wireup_connect_lane(ucp_ep_h ep, unsigned ep_init_flags,
     ucs_assert_always(addr_index <= remote_address->address_count);
 
     rsc_index  = ucp_ep_get_rsc_index(ep, lane);
-    wiface     = ucp_worker_iface_with_offset(worker, rsc_index,
-                                              &ucp_tl_bitmap_max, 0);
+    wiface     = ucp_worker_iface_with_offset(worker, rsc_index, tl_bitmap,
+                                              iface_tl_base);
 
     /*
      * create a wireup endpoint which will start connection establishment
@@ -1255,11 +1256,14 @@ static void ucp_wireup_print_config(ucp_worker_h worker,
 }
 
 int ucp_wireup_is_reachable(ucp_ep_h ep, unsigned ep_init_flags,
-                            ucp_rsc_index_t rsc_index,
-                            const ucp_address_entry_t *ae)
+                            ucp_rsc_index_t rsc_index, ucp_tl_bitmap_t tl_bitmap,
+                            unsigned iface_tl_base, const ucp_address_entry_t *ae)
 {
     ucp_context_h context      = ep->worker->context;
-    ucp_worker_iface_t *wiface = ucp_worker_iface(ep->worker, rsc_index);
+    ucp_worker_iface_t *wiface = ucp_worker_iface_with_offset(ep->worker,
+                                                              rsc_index,
+                                                              tl_bitmap,
+                                                              iface_tl_base);
     uct_iface_is_reachable_params_t params = {
         .field_mask  = UCT_IFACE_IS_REACHABLE_FIELD_DEVICE_ADDR |
                        UCT_IFACE_IS_REACHABLE_FIELD_IFACE_ADDR,
@@ -1277,6 +1281,7 @@ int ucp_wireup_is_reachable(ucp_ep_h ep, unsigned ep_init_flags,
 static void
 ucp_wireup_get_reachable_mds(ucp_ep_h ep, unsigned ep_init_flags,
                              const ucp_unpacked_address_t *remote_address,
+                             ucp_tl_bitmap_t tl_bitmap, unsigned iface_tl_base,
                              ucp_ep_config_key_t *key)
 {
     ucp_context_h context = ep->worker->context;
@@ -1291,9 +1296,10 @@ ucp_wireup_get_reachable_mds(ucp_ep_h ep, unsigned ep_init_flags,
     unsigned num_dst_mds;
 
     ae_dst_md_map = 0;
-    UCS_BITMAP_FOR_EACH_BIT(context->tl_bitmap, rsc_index) {
+    UCS_BITMAP_FOR_EACH_BIT(tl_bitmap, rsc_index) {
         ucp_unpacked_address_for_each(ae, remote_address) {
-            if (ucp_wireup_is_reachable(ep, ep_init_flags, rsc_index, ae)) {
+            if (ucp_wireup_is_reachable(ep, ep_init_flags, rsc_index,
+                                        tl_bitmap, iface_tl_base, ae)) {
                 ae_dst_md_map         |= UCS_BIT(ae->md_index);
                 dst_md_index           = context->tl_rscs[rsc_index].md_index;
                 ae_cmpts[ae->md_index] = context->tl_mds[dst_md_index].cmpt_index;
@@ -1579,7 +1585,12 @@ ucs_status_t ucp_wireup_init_lanes(ucp_ep_h ep, unsigned ep_init_flags,
      * current ep configuration
      */
     key.dst_md_cmpts = ucs_alloca(sizeof(*key.dst_md_cmpts) * UCP_MAX_MDS);
-    ucp_wireup_get_reachable_mds(ep, ep_init_flags, remote_address, &key);
+    ucp_wireup_get_reachable_mds(ep, ep_init_flags, remote_address,
+                                 tl_bitmap, iface_tl_base, &key);
+    if (key.num_lanes == 0) {
+        status = UCS_ERR_UNREACHABLE;
+        goto out;
+    }
 
     /* Load new configuration */
     status = ucp_worker_get_ep_config(worker, &key, ep_init_flags,
@@ -1636,9 +1647,11 @@ ucs_status_t ucp_wireup_init_lanes(ucp_ep_h ep, unsigned ep_init_flags,
         }
 
         if (connect_lane_bitmap & UCS_BIT(lane)) {
-            status = ucp_wireup_connect_lane(ep, ep_init_flags, lane,
+            status = ucp_wireup_connect_lane(ep, ep_init_flags, tl_bitmap,
+                                             iface_tl_base, lane,
                                              key.lanes[lane].path_index,
                                              remote_address, addr_indices[lane]);
+ucs_assert(status == UCS_OK);
             if (status != UCS_OK) {
                 goto out;
             }

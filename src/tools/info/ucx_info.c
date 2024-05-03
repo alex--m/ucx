@@ -75,21 +75,17 @@ static void usage()
     printf("                        's' : stream \n");
     printf("                        'm' : active messages \n");
     printf("                        'x' : exported memory handle \n");
-#if ENABLE_UCG
     printf("                        'g' : groups \n");
-#endif
     printf("                       Modifiers to use in combination with above features:\n");
     printf("                        'w' : wakeup\n");
     printf("                        'e' : error handling\n");
-#if ENABLE_UCG
     printf("\nUCG information:\n");
     printf("  -g                   Show UCG information\n");
-    printf("  -Q <planner>         UCG Planner component to use\n");
-    printf("  -C <coll_type>       UCG Collective operation type to plan (default: allreduce)\n");
+    printf("  -G <coll_type>       UCG Collective operation type to plan (default: allreduce)\n");
     printf("  -S <size>            UCG Collective operation buffer size  (a.k.a \"count\", default: 1)\n");
     printf("  -I <index>           UCG Group index to use as mine (a.k.a \"rank\", default: 0)\n");
-    printf("  -T X:[Y:[Z]]         UCG Topology: number of peers of each distance (socket:host:fabric)\n");
-#endif
+    printf("  -r <root>            UCG Group index to use as the root, where applicablt (default: 0)\n");
+    printf("  -H X:[Y:[Z]]         UCG Topology: number of peers of each distance (socket:host:fabric)\n");
     printf("\nOther settings:\n");
     printf("  -t <name>            Show devices of the specified transport (requires -d)\n");
     printf("  -n <count>           Estimated UCP endpoint count (for ucp_init)\n");
@@ -118,11 +114,10 @@ static void ep_error_callback(void *arg, ucp_ep_h ep, ucs_status_t status)
     /* Empty error callback */
 }
 
-#if ENABLE_UCG
 static inline void parse_ucg_peers(ucg_group_member_index_t *peer_count,
-                                   unsigned max_nums, char *optarg)
+                                   unsigned max_nums, char *peer_nums)
 {
-    char *s = strtok(optarg, ":");
+    char *s = strtok(peer_nums, ":");
     while ((s != NULL) && (max_nums)) {
         *peer_count = atoi(s);
         s = strtok(NULL, ":");
@@ -130,21 +125,17 @@ static inline void parse_ucg_peers(ucg_group_member_index_t *peer_count,
         max_nums--;
     }
 }
-#endif
 
 int main(int argc, char **argv)
 {
     const uint64_t required_ucp_features = UCP_FEATURE_AMO32 |
                                            UCP_FEATURE_AMO64 | UCP_FEATURE_RMA |
                                            UCP_FEATURE_TAG | UCP_FEATURE_AM;
-#if ENABLE_UCG
     char *collective_type_name = "allreduce";
-    ucg_group_member_index_t peer_count[4];
+    ucg_group_member_index_t peer_count[4] = {0};
     ucg_group_member_index_t root_index = 0;
     ucg_group_member_index_t my_index = 0;
-    char *planner_name = NULL;
     size_t count = 1;
-#endif
     char *ip_addr = NULL;
     sa_family_t ip_addr_family;
     ucs_config_print_flags_t print_flags;
@@ -171,7 +162,7 @@ int main(int argc, char **argv)
     ucp_ep_params.field_mask = 0;
     ip_addr_family           = AF_INET;
 
-    while ((c = getopt(argc, argv, "fahvc6ydbswpegCt:n:u:D:P:m:N:A:TMQ:C:G:I:S:r:R:")) != -1) {
+    while ((c = getopt(argc, argv, "fahvc6ydbswpegCt:n:u:D:P:m:N:A:TMQ:C:G:H:I:S:r:R:")) != -1) {
         switch (c) {
         case 'f':
             print_flags |= UCS_CONFIG_PRINT_CONFIG | UCS_CONFIG_PRINT_HEADER | UCS_CONFIG_PRINT_DOC;
@@ -213,7 +204,6 @@ int main(int argc, char **argv)
             print_opts |= PRINT_MEM_MAP;
             mem_spec    = optarg;
             break;
-#if ENABLE_UCG
         case 'g':
             print_opts   |= PRINT_UCG;
             ucp_features |= UCP_FEATURE_GROUPS | UCP_FEATURE_TAG;
@@ -227,18 +217,14 @@ int main(int argc, char **argv)
         case 'G':
             collective_type_name = optarg;
             break;
-        case 'T':
+        case 'H':
             print_opts   |= PRINT_UCG_TOPO;
             ucp_features |= UCP_FEATURE_GROUPS | UCP_FEATURE_TAG;
             parse_ucg_peers(&peer_count[1], 3, optarg);
             break;
-        case 'Q':
-            planner_name = optarg;
-            break;
         case 'S':
             count = atol(optarg);
             break;
-#endif
         case 't':
             tl_name = optarg;
             break;
@@ -378,15 +364,11 @@ int main(int argc, char **argv)
             return -1;
         }
 
-        return print_ucp_info(print_opts, print_flags, ucp_features,
+        return print_ucx_info(print_opts, print_flags, ucp_features,
                               &ucp_ep_params, ucp_num_eps, ucp_num_ppn,
                               dev_type_bitmap, proc_placement, mem_spec,
-                              ip_addr, ip_addr_family
-#if ENABLE_UCG
-                              ,planner_name, root_index, my_index,
-                              collective_type_name, count, peer_count
-#endif
-                              );
+                              ip_addr, ip_addr_family, root_index, my_index,
+                              collective_type_name, count, peer_count);
     }
 
     return 0;

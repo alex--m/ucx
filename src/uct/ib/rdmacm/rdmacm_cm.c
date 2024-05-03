@@ -360,9 +360,18 @@ size_t uct_rdmacm_cm_get_max_conn_priv()
 
 static ucs_status_t uct_rdmacm_cm_query(uct_cm_h cm, uct_cm_attr_t *cm_attr)
 {
+    struct ibv_device_attr *dev_attr = {0}; // TODO: fill
+
     if (cm_attr->field_mask & UCT_CM_ATTR_FIELD_MAX_CONN_PRIV) {
         cm_attr->max_conn_priv = uct_rdmacm_cm_get_max_conn_priv();
     }
+
+    if (cm_attr->field_mask & UCT_CM_ATTR_FIELD_MCAST) {
+        cm_attr->mcast.max_groups        = dev_attr->max_mcast_grp;
+        cm_attr->mcast.max_eps_per_group = dev_attr->max_mcast_qp_attach;
+        cm_attr->mcast.max_eps           = dev_attr->max_total_mcast_qp_attach;
+    }
+
     return UCS_OK;
 }
 
@@ -637,6 +646,79 @@ static void uct_rdmacm_cm_handle_event_established(struct rdma_cm_event *event)
     uct_rdmacm_cm_ep_server_conn_notify_cb(cep, UCS_OK);
 }
 
+static void uct_rdmacm_cm_handle_event_multicast(struct rdma_cm_event *event)
+{
+    uct_rdmacm_priv_data_hdr_t *hdr = (uct_rdmacm_priv_data_hdr_t*)
+                                       event->param.conn.private_data;
+    uct_rdmacm_cm_ep_t         *cep = event->id->context;
+    char                       ep_str[UCT_RDMACM_EP_STRING_LEN];
+    uct_device_addr_t          *dev_addr;
+    size_t                     addr_length;
+    uct_cm_remote_data_t       remote_data;
+    ucs_status_t               status;
+
+    ucs_assert(event->id == cep->id);
+    ucs_trace("%s joined a multicast group",
+              uct_rdmacm_cm_ep_str(cep, ep_str, UCT_RDMACM_EP_STRING_LEN));
+
+    /* Do not notify user on disconnected EP, RDMACM out of order case */
+    if (cep->flags & UCT_RDMACM_CM_EP_GOT_DISCONNECT) {
+        return;
+    }
+
+    remote_data.field_mask            = UCT_CM_REMOTE_DATA_FIELD_CONN_PRIV_DATA |
+                                        UCT_CM_REMOTE_DATA_FIELD_CONN_PRIV_DATA_LENGTH;
+    remote_data.conn_priv_data        = hdr + 1;
+    remote_data.conn_priv_data_length = hdr->length;
+    ucs_assert(hdr->length);
+
+
+
+// //     struct ibv_ah_attr ah_attr = {
+// //         .is_global     = 1,
+// //         .grh           = {.sgid_index = 0},
+// //         .dlid          = comm->mcast_lid,
+// //         .sl            = DEF_SL,
+// //         .src_path_bits = DEF_SRC_PATH_BITS,
+// //         .port_num      = comm->ctx->ib_port
+// //     };
+// //     memcpy(ah_attr.grh.dgid.raw, &comm->mgid, sizeof(ah_attr.grh.dgid.raw));
+
+
+//         uct_ib_iface_fill_ah_attr_from_addr(ib_iface, ib_addr, path_index,
+//                                         &ah_attr, &path_mtu);
+
+//     return uct_ib_iface_create_ah(ib_iface, &ah_attr, "UD mcast connect",
+//                                   &address_p->ah);
+
+//     mcast_dgid      = cm_event->param.ud.ah_attr.grh.dgid;
+//     mcast_dlid      = cm_event->param.ud.ah_attr.dlid;
+//     if (ibv_attach_mcast(comm->mcast.qp, &comm->mgid, comm->mcast_lid)) {
+//         tl_warn(ctx->lib, "failed to attach QP to the mcast group, errno %d", errno);
+//         return UCC_ERR_NO_RESOURCE;
+//     }
+//
+
+    status = uct_rdmacm_cm_id_to_dev_addr(uct_rdmacm_cm_ep_get_cm(cep),
+                                          event->id, &dev_addr, &addr_length);
+    if (status != UCS_OK) {
+        ucs_diag("%s client (ep=%p id=%p) failed to process a connect response ",
+                 uct_rdmacm_cm_ep_str(cep, ep_str, UCT_RDMACM_EP_STRING_LEN),
+                 cep, event->id);
+        uct_rdmacm_cm_ep_set_failed(cep, &remote_data, status, 1);
+        return;
+    }
+
+    remote_data.field_mask       |= UCT_CM_REMOTE_DATA_FIELD_DEV_ADDR |
+                                    UCT_CM_REMOTE_DATA_FIELD_DEV_ADDR_LENGTH;
+    remote_data.dev_addr          = dev_addr;
+    remote_data.dev_addr_length   = addr_length;
+
+    uct_rdmacm_cm_ep_client_connect_cb(cep, &remote_data,
+                                       (ucs_status_t)hdr->status);
+    ucs_free(dev_addr);
+}
+
 static const char*
 uct_rdmacm_cm_event_status_str(const struct rdma_cm_event *event)
 {
@@ -773,6 +855,9 @@ uct_rdmacm_cm_process_event(uct_rdmacm_cm_t *cm, struct rdma_cm_event *event)
         /* Server side event */
         uct_rdmacm_cm_handle_event_established(event);
         break;
+    case RDMA_CM_EVENT_MULTICAST_JOIN:
+        uct_rdmacm_cm_handle_event_multicast(event);
+        break;
     case RDMA_CM_EVENT_DISCONNECTED:
         /* Client and Server side event */
         uct_rdmacm_cm_handle_event_disconnected(event);
@@ -793,6 +878,7 @@ uct_rdmacm_cm_process_event(uct_rdmacm_cm_t *cm, struct rdma_cm_event *event)
         /* client and server error events */
     case RDMA_CM_EVENT_REJECTED:
     case RDMA_CM_EVENT_CONNECT_ERROR:
+    case RDMA_CM_EVENT_MULTICAST_ERROR:
         uct_rdmacm_cm_handle_error_event(event);
         break;
     default:

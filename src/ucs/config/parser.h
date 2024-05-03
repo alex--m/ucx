@@ -152,8 +152,8 @@ typedef struct ucs_config_bw_spec {
     UCS_CONFIG_DECLARE_TABLE(_table, _name, _prefix, _type) \
     UCS_CONFIG_REGISTER_TABLE_ENTRY(&_table##_config_entry, _list);
 
-#define UCS_CONFIG_DECLARE_TABLE(_table, _name, _prefix, _type) \
-    static ucs_config_global_list_entry_t _table##_config_entry = { \
+#define UCS_CONFIG_DECLARE_PUBLIC_TABLE(_table, _name, _prefix, _type) \
+    ucs_config_global_list_entry_t _table##_config_entry = { \
         .table  = _table, \
         .name   = _name, \
         .prefix = _prefix, \
@@ -161,6 +161,8 @@ typedef struct ucs_config_bw_spec {
         .flags  = 0 \
     };
 
+#define UCS_CONFIG_DECLARE_TABLE(_table, _name, _prefix, _type) \
+    static UCS_CONFIG_DECLARE_PUBLIC_TABLE(_table, _name, _prefix, _type)
 
 #define UCS_CONFIG_GET_TABLE(_table) &_table##_config_entry
 

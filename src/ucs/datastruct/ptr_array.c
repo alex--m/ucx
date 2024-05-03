@@ -127,7 +127,8 @@ void ucs_ptr_array_cleanup(ucs_ptr_array_t *ptr_array, int leak_check)
     unsigned i;
 
     if (leak_check && (ptr_array->count > 0)) {
-        ucs_warn("releasing ptr_array with %u used items", ptr_array->count);
+        ucs_warn("releasing ptr_array %s with %u used items", ptr_array->name,
+                 ptr_array->count);
         for (i = 0; i < ptr_array->size; ++i) {
             if (!ucs_ptr_array_is_free(ptr_array, i)) {
                 ucs_trace("ptr_array(%p) idx %d is not free during cleanup:"

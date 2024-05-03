@@ -27,10 +27,15 @@
 #include <uct/ib/mlx5/dv/ib_mlx5_dv.h>
 
 #include <uct/ib/ud/base/ud_iface.h>
+#include <uct/ib/ud/base/ud_mcast.h>
 #include <uct/ib/ud/base/ud_ep.h>
 #include <uct/ib/ud/base/ud_def.h>
 #include <uct/ib/ud/base/ud_inl.h>
 
+typedef struct uct_ud_mlx5_mcast_iface {
+    uct_ud_mlx5_base_iface_t super;
+    uct_ud_mcast_ctx_t mcast;
+} uct_ud_mlx5_mcast_iface_t;
 
 static ucs_config_field_t uct_ud_mlx5_iface_config_table[] = {
   {"UD_", "", NULL,
@@ -47,6 +52,15 @@ static ucs_config_field_t uct_ud_mlx5_iface_config_table[] = {
 
   {NULL}
 };
+
+#if HAVE_MCAST_COLL
+static ucs_config_field_t uct_ud_mlx5_mcast_iface_config_table[] = {
+  {"MLX5_", "", NULL,
+   0, UCS_CONFIG_TYPE_TABLE(uct_ud_mlx5_iface_config_table)},
+
+  {NULL}
+};
+#endif
 
 static UCS_F_ALWAYS_INLINE size_t
 uct_ud_mlx5_ep_ctrl_av_size(uct_ud_mlx5_ep_t *ep)
@@ -83,7 +97,7 @@ uct_ud_mlx5_set_dgram_seg(struct mlx5_wqe_datagram_seg *seg,
 }
 
 static UCS_F_ALWAYS_INLINE void
-uct_ud_mlx5_post_send(uct_ud_mlx5_iface_t *iface, uct_ud_mlx5_ep_t *ep,
+uct_ud_mlx5_post_send(uct_ud_mlx5_base_iface_t *iface, uct_ud_mlx5_ep_t *ep,
                       uint8_t ce_se, struct mlx5_wqe_ctrl_seg *ctrl,
                       size_t wqe_size, uct_ud_neth_t *neth, int max_log_sge)
 {
@@ -109,7 +123,7 @@ uct_ud_mlx5_post_send(uct_ud_mlx5_iface_t *iface, uct_ud_mlx5_ep_t *ep,
 }
 
 static UCS_F_ALWAYS_INLINE struct mlx5_wqe_ctrl_seg *
-uct_ud_mlx5_ep_get_next_wqe(uct_ud_mlx5_iface_t *iface, uct_ud_mlx5_ep_t *ep,
+uct_ud_mlx5_ep_get_next_wqe(uct_ud_mlx5_base_iface_t *iface, uct_ud_mlx5_ep_t *ep,
                             size_t *wqe_size_p, void **next_seg_p)
 {
     size_t ctrl_av_size = uct_ud_mlx5_ep_ctrl_av_size(ep);
@@ -131,8 +145,8 @@ static uint16_t uct_ud_mlx5_ep_send_ctl(uct_ud_ep_t *ud_ep, uct_ud_send_skb_t *s
                                         const uct_ud_iov_t *iov, uint16_t iovcnt,
                                         int flags, int max_log_sge)
 {
-    uct_ud_mlx5_iface_t *iface = ucs_derived_of(ud_ep->super.super.iface,
-                                                uct_ud_mlx5_iface_t);
+    uct_ud_mlx5_base_iface_t *iface = ucs_derived_of(ud_ep->super.super.iface,
+                                                uct_ud_mlx5_base_iface_t);
     uct_ud_mlx5_ep_t *ep       = ucs_derived_of(ud_ep, uct_ud_mlx5_ep_t);
     struct mlx5_wqe_inl_data_seg *inl;
     struct mlx5_wqe_ctrl_seg *ctrl;
@@ -188,7 +202,7 @@ static uint16_t uct_ud_mlx5_ep_send_ctl(uct_ud_ep_t *ud_ep, uct_ud_send_skb_t *s
 }
 
 static UCS_F_NOINLINE void
-uct_ud_mlx5_iface_post_recv(uct_ud_mlx5_iface_t *iface)
+uct_ud_mlx5_iface_post_recv(uct_ud_mlx5_base_iface_t *iface)
 {
     unsigned batch = iface->super.super.config.rx_max_batch;
     struct mlx5_wqe_data_seg *rx_wqes;
@@ -220,8 +234,8 @@ uct_ud_mlx5_iface_post_recv(uct_ud_mlx5_iface_t *iface)
 
 static UCS_CLASS_INIT_FUNC(uct_ud_mlx5_ep_t, const uct_ep_params_t *params)
 {
-    uct_ud_mlx5_iface_t *iface = ucs_derived_of(params->iface,
-                                                uct_ud_mlx5_iface_t);
+    uct_ud_mlx5_base_iface_t *iface = ucs_derived_of(params->iface,
+                                                uct_ud_mlx5_base_iface_t);
     ucs_trace_func("");
     UCS_CLASS_CALL_SUPER_INIT(uct_ud_ep_t, &iface->super, params);
     return UCS_OK;
@@ -252,8 +266,8 @@ static UCS_F_ALWAYS_INLINE ucs_status_t uct_ud_mlx5_ep_inline_iov_post(
         unsigned stat_ops_counter, unsigned stat_bytes_counter,
         const char *func_name)
 {
-    uct_ud_mlx5_iface_t *iface = ucs_derived_of(tl_ep->iface,
-                                                uct_ud_mlx5_iface_t);
+    uct_ud_mlx5_base_iface_t *iface = ucs_derived_of(tl_ep->iface,
+                                                uct_ud_mlx5_base_iface_t);
     uct_ud_mlx5_ep_t *ep       = ucs_derived_of(tl_ep, uct_ud_mlx5_ep_t);
     size_t inl_iov_size        = uct_iov_total_length(inl_iov, inl_iovcnt);
     struct mlx5_wqe_inl_data_seg *inl;
@@ -406,8 +420,8 @@ static ssize_t uct_ud_mlx5_ep_am_bcopy(uct_ep_h tl_ep, uint8_t id,
                                        unsigned flags)
 {
     uct_ud_mlx5_ep_t *ep       = ucs_derived_of(tl_ep, uct_ud_mlx5_ep_t);
-    uct_ud_mlx5_iface_t *iface = ucs_derived_of(tl_ep->iface,
-                                                uct_ud_mlx5_iface_t);
+    uct_ud_mlx5_base_iface_t *iface = ucs_derived_of(tl_ep->iface,
+                                                uct_ud_mlx5_base_iface_t);
     struct mlx5_wqe_ctrl_seg *ctrl;
     struct mlx5_wqe_data_seg *dptr;
     uct_ud_send_skb_t *skb;
@@ -477,7 +491,7 @@ uct_ud_mlx5_ep_put_short(uct_ep_h tl_ep, const void *buffer, unsigned length,
 }
 
 static UCS_F_ALWAYS_INLINE unsigned
-uct_ud_mlx5_iface_poll_rx(uct_ud_mlx5_iface_t *iface, int is_async,
+uct_ud_mlx5_iface_poll_rx(uct_ud_mlx5_base_iface_t *iface, int is_async,
                           unsigned *needs_lock_p)
 {
     struct mlx5_cqe64 *cqe;
@@ -550,7 +564,7 @@ out:
 }
 
 static UCS_F_ALWAYS_INLINE unsigned
-uct_ud_mlx5_iface_poll_tx(uct_ud_mlx5_iface_t *iface, int is_async,
+uct_ud_mlx5_iface_poll_tx(uct_ud_mlx5_base_iface_t *iface, int is_async,
                           unsigned *needs_lock_p)
 {
     struct mlx5_cqe64 *cqe;
@@ -584,7 +598,7 @@ uct_ud_mlx5_iface_poll_tx(uct_ud_mlx5_iface_t *iface, int is_async,
 
 static unsigned uct_ud_mlx5_iface_progress(uct_iface_h tl_iface)
 {
-    uct_ud_mlx5_iface_t *iface = ucs_derived_of(tl_iface, uct_ud_mlx5_iface_t);
+    uct_ud_mlx5_base_iface_t *iface = ucs_derived_of(tl_iface, uct_ud_mlx5_base_iface_t);
     unsigned n, count, needs_lock = 1;
 
 #if ENABLE_MT
@@ -620,7 +634,7 @@ static unsigned uct_ud_mlx5_iface_progress(uct_iface_h tl_iface)
 
 static unsigned uct_ud_mlx5_iface_async_progress(uct_ud_iface_t *ud_iface)
 {
-    uct_ud_mlx5_iface_t *iface = ucs_derived_of(ud_iface, uct_ud_mlx5_iface_t);
+    uct_ud_mlx5_base_iface_t *iface = ucs_derived_of(ud_iface, uct_ud_mlx5_base_iface_t);
     unsigned n, count, needs_lock = 0;
 
     count = 0;
@@ -657,13 +671,26 @@ uct_ud_mlx5_iface_query(uct_iface_h tl_iface, uct_iface_attr_t *iface_attr)
 }
 
 static ucs_status_t
+uct_ud_mcast_mlx5_iface_query(uct_iface_h tl_iface, uct_iface_attr_t *iface_attr)
+{
+    ucs_status_t status = uct_ud_mlx5_iface_query(tl_iface, iface_attr);
+    if (status != UCS_OK) {
+        return status;
+    }
+
+    iface_attr->cap.flags |= UCT_IFACE_FLAG_BCAST;
+
+    return UCS_OK;
+}
+
+static ucs_status_t
 uct_ud_mlx5_iface_unpack_peer_address(uct_ud_iface_t *ud_iface,
                                       const uct_ib_address_t *ib_addr,
                                       const uct_ud_iface_addr_t *if_addr,
                                       int path_index, void *address_p)
 {
-    uct_ud_mlx5_iface_t *iface                  =
-        ucs_derived_of(ud_iface, uct_ud_mlx5_iface_t);
+    uct_ud_mlx5_base_iface_t *iface                  =
+        ucs_derived_of(ud_iface, uct_ud_mlx5_base_iface_t);
     uct_ud_mlx5_ep_peer_address_t *peer_address =
         (uct_ud_mlx5_ep_peer_address_t*)address_p;
     ucs_status_t status;
@@ -715,7 +742,7 @@ uct_ud_mlx5_create_cq(uct_ib_iface_t *ib_iface, uct_ib_dir_t dir,
                       const uct_ib_iface_init_attr_t *init_attr,
                       int preferred_cpu, size_t inl)
 {
-    uct_ud_mlx5_iface_t *iface = ucs_derived_of(ib_iface, uct_ud_mlx5_iface_t);
+    uct_ud_mlx5_base_iface_t *iface = ucs_derived_of(ib_iface, uct_ud_mlx5_base_iface_t);
     uct_ib_mlx5_cq_t *uct_cq   = &iface->cq[dir];
 
     uct_cq->type = UCT_IB_MLX5_OBJ_TYPE_VERBS;
@@ -726,7 +753,7 @@ uct_ud_mlx5_create_cq(uct_ib_iface_t *ib_iface, uct_ib_dir_t dir,
 static void
 uct_ud_mlx5_iface_async_handler(int fd, ucs_event_set_types_t events, void *arg)
 {
-    uct_ud_mlx5_iface_t *iface = arg;
+    uct_ud_mlx5_base_iface_t *iface = arg;
 
     uct_ud_iface_async_progress(&iface->super);
 
@@ -739,7 +766,7 @@ uct_ud_mlx5_iface_async_handler(int fd, ucs_event_set_types_t events, void *arg)
 
 ucs_status_t uct_ud_mlx5_iface_event_arm(uct_iface_h tl_iface, unsigned events)
 {
-    uct_ud_mlx5_iface_t *iface = ucs_derived_of(tl_iface, uct_ud_mlx5_iface_t);
+    uct_ud_mlx5_base_iface_t *iface = ucs_derived_of(tl_iface, uct_ud_mlx5_base_iface_t);
     uct_ib_mlx5_md_t *md       = ucs_derived_of(iface->super.super.super.md,
                                                 uct_ib_mlx5_md_t);
     ucs_status_t status;
@@ -772,7 +799,7 @@ out:
 static void uct_ud_mlx5_iface_event_cq(uct_ib_iface_t *ib_iface,
                                        uct_ib_dir_t dir)
 {
-    uct_ud_mlx5_iface_t *iface = ucs_derived_of(ib_iface, uct_ud_mlx5_iface_t);
+    uct_ud_mlx5_base_iface_t *iface = ucs_derived_of(ib_iface, uct_ud_mlx5_base_iface_t);
 
     iface->cq[dir].cq_sn++;
 }
@@ -814,7 +841,7 @@ static ucs_status_t uct_ud_mlx5_iface_create_qp(uct_ib_iface_t *ib_iface,
                                                 uct_ib_qp_attr_t *ib_attr,
                                                 struct ibv_qp **qp_p)
 {
-    uct_ud_mlx5_iface_t *iface = ucs_derived_of(ib_iface, uct_ud_mlx5_iface_t);
+    uct_ud_mlx5_base_iface_t *iface = ucs_derived_of(ib_iface, uct_ud_mlx5_base_iface_t);
     uct_ib_mlx5_md_t *ib_md    = ucs_derived_of(ib_iface->super.md,
                                                 uct_ib_mlx5_md_t);
     uct_ib_mlx5_qp_t *qp       = &iface->tx.wq.super;
@@ -848,7 +875,7 @@ err_destroy_qp:
 
 static void uct_ud_mlx5_iface_destroy_qp(uct_ud_iface_t *ud_iface)
 {
-    uct_ud_mlx5_iface_t *iface = ucs_derived_of(ud_iface, uct_ud_mlx5_iface_t);
+    uct_ud_mlx5_base_iface_t *iface = ucs_derived_of(ud_iface, uct_ud_mlx5_base_iface_t);
     uct_ib_mlx5_md_t *ib_md    = ucs_derived_of(ud_iface->super.super.md,
                                                 uct_ib_mlx5_md_t);
     uct_ib_mlx5_qp_t *qp       = &iface->tx.wq.super;
@@ -857,12 +884,12 @@ static void uct_ud_mlx5_iface_destroy_qp(uct_ud_iface_t *ud_iface)
     uct_ib_mlx5_qp_mmio_cleanup(qp, iface->tx.wq.reg);
 }
 
-static void UCS_CLASS_DELETE_FUNC_NAME(uct_ud_mlx5_iface_t)(uct_iface_t*);
+static void UCS_CLASS_DELETE_FUNC_NAME(uct_ud_mlx5_base_iface_t)(uct_iface_t*);
 
 static void uct_ud_mlx5_iface_handle_failure(uct_ib_iface_t *ib_iface, void *arg,
                                              ucs_status_t status)
 {
-    uct_ud_mlx5_iface_t *iface = ucs_derived_of(ib_iface, uct_ud_mlx5_iface_t);
+    uct_ud_mlx5_base_iface_t *iface = ucs_derived_of(ib_iface, uct_ud_mlx5_base_iface_t);
 
     ucs_assert(status != UCS_ERR_ENDPOINT_TIMEOUT);
     /* Local side failure - treat as fatal */
@@ -921,7 +948,7 @@ static uct_iface_ops_t uct_ud_mlx5_iface_tl_ops = {
     .iface_event_fd_get       = (uct_iface_event_fd_get_func_t)
                                 ucs_empty_function_return_unsupported,
     .iface_event_arm          = uct_ud_mlx5_iface_event_arm,
-    .iface_close              = UCS_CLASS_DELETE_FUNC_NAME(uct_ud_mlx5_iface_t),
+    .iface_close              = UCS_CLASS_DELETE_FUNC_NAME(uct_ud_mlx5_base_iface_t),
     .iface_query              = uct_ud_mlx5_iface_query,
     .iface_get_device_address = uct_ib_iface_get_device_address,
     .iface_get_address        = uct_ud_iface_get_address,
@@ -977,7 +1004,8 @@ out:
     return status;
 }
 
-static UCS_CLASS_INIT_FUNC(uct_ud_mlx5_iface_t, uct_md_h tl_md,
+static UCS_CLASS_INIT_FUNC(uct_ud_mlx5_base_iface_t, uct_ud_iface_ops_t *ops,
+                           uct_iface_ops_t *tl_ops, uct_md_h tl_md,
                            uct_worker_h worker,
                            const uct_iface_params_t *params,
                            const uct_iface_config_t *tl_config)
@@ -1010,8 +1038,7 @@ static UCS_CLASS_INIT_FUNC(uct_ud_mlx5_iface_t, uct_md_h tl_md,
     self->tx.mmio_mode     = config->mlx5_common.mmio_mode;
     self->tx.wq.super.type = UCT_IB_MLX5_OBJ_TYPE_LAST;
 
-    UCS_CLASS_CALL_SUPER_INIT(uct_ud_iface_t, &uct_ud_mlx5_iface_ops,
-                              &uct_ud_mlx5_iface_tl_ops, tl_md, worker, params,
+    UCS_CLASS_CALL_SUPER_INIT(uct_ud_iface_t, ops, tl_ops, tl_md, worker, params,
                               &config->super, &init_attr);
 
     self->super.config.max_inline = uct_ud_mlx5_max_inline();
@@ -1065,19 +1092,88 @@ static UCS_CLASS_INIT_FUNC(uct_ud_mlx5_iface_t, uct_md_h tl_md,
     return UCS_OK;
 }
 
+static UCS_CLASS_CLEANUP_FUNC(uct_ud_mlx5_base_iface_t)
+{
+    ucs_trace_func("");
+}
+
+UCS_CLASS_DEFINE(uct_ud_mlx5_base_iface_t, uct_ud_iface_t);
+
+static UCS_CLASS_DEFINE_DELETE_FUNC(uct_ud_mlx5_base_iface_t, uct_iface_t);
+
+static void UCS_CLASS_DELETE_FUNC_NAME(uct_ud_mlx5_iface_t)(uct_iface_t*);
+
+static UCS_CLASS_INIT_FUNC(uct_ud_mlx5_iface_t, uct_md_h md, uct_worker_h worker,
+                           const uct_iface_params_t *params,
+                           const uct_iface_config_t *tl_config)
+{
+    ucs_trace_func("");
+
+    uct_ud_mlx5_iface_tl_ops.iface_close =
+        UCS_CLASS_DELETE_FUNC_NAME(uct_ud_mlx5_iface_t);
+
+    uct_ud_mcast_init_collective_check(&worker, params, &uct_ud_mlx5_iface_tl_ops);
+
+    UCS_CLASS_CALL_SUPER_INIT(uct_ud_mlx5_base_iface_t, &uct_ud_mlx5_iface_ops,
+                              &uct_ud_mlx5_iface_tl_ops, md, worker, params,
+                              tl_config);
+
+    return UCS_OK;
+}
 
 static UCS_CLASS_CLEANUP_FUNC(uct_ud_mlx5_iface_t)
 {
     ucs_trace_func("");
 }
 
-UCS_CLASS_DEFINE(uct_ud_mlx5_iface_t, uct_ud_iface_t);
+UCS_CLASS_DEFINE(uct_ud_mlx5_iface_t, uct_ud_mlx5_base_iface_t);
 
 static UCS_CLASS_DEFINE_NEW_FUNC(uct_ud_mlx5_iface_t, uct_iface_t, uct_md_h,
                                  uct_worker_h, const uct_iface_params_t*,
                                  const uct_iface_config_t*);
 
 static UCS_CLASS_DEFINE_DELETE_FUNC(uct_ud_mlx5_iface_t, uct_iface_t);
+
+static void UCS_CLASS_DELETE_FUNC_NAME(uct_ud_mlx5_mcast_iface_t)(uct_iface_t*);
+
+static UCS_CLASS_INIT_FUNC(uct_ud_mlx5_mcast_iface_t, uct_md_h md,
+                           uct_worker_h worker, const uct_iface_params_t *params,
+                           const uct_iface_config_t *tl_config)
+{
+    ucs_trace_func("");
+
+    uct_ud_mlx5_iface_tl_ops.iface_query = uct_ud_mcast_mlx5_iface_query;
+    uct_ud_mlx5_iface_tl_ops.iface_close =
+        UCS_CLASS_DELETE_FUNC_NAME(uct_ud_mlx5_mcast_iface_t);
+
+    UCS_CLASS_CALL_SUPER_INIT(uct_ud_mlx5_base_iface_t, &uct_ud_mlx5_iface_ops,
+                              &uct_ud_mlx5_iface_tl_ops, md, worker, params,
+                              tl_config);
+
+    if (self->super.super.super.super.worker != NULL) {
+        return uct_ud_mcast_group_init(&self->mcast,
+#if ENABLE_STATS
+                                       self->super.super.stats);
+#else
+                                       NULL);
+#endif
+    }
+
+    return UCS_OK;
+}
+
+static UCS_CLASS_CLEANUP_FUNC(uct_ud_mlx5_mcast_iface_t)
+{
+    ucs_trace_func("");
+
+    if (self->super.super.super.super.worker != NULL) {
+        return uct_ud_mcast_group_cleanup(&self->mcast);
+    }
+}
+
+UCS_CLASS_DEFINE(uct_ud_mlx5_mcast_iface_t, uct_ud_mlx5_base_iface_t);
+
+static UCS_CLASS_DEFINE_DELETE_FUNC(uct_ud_mlx5_mcast_iface_t, uct_iface_t);
 
 static ucs_status_t
 uct_ud_mlx5_query_tl_devices(uct_md_h md,
@@ -1097,3 +1193,13 @@ uct_ud_mlx5_query_tl_devices(uct_md_h md,
 UCT_TL_DEFINE_ENTRY(&uct_ib_component, ud_mlx5, uct_ud_mlx5_query_tl_devices,
                     uct_ud_mlx5_iface_t, "UD_MLX5_",
                     uct_ud_mlx5_iface_config_table, uct_ud_mlx5_iface_config_t);
+
+#if HAVE_MCAST_COLL
+static UCS_CLASS_DEFINE_NEW_FUNC(uct_ud_mlx5_mcast_iface_t, uct_iface_t, uct_md_h,
+                                 uct_worker_h, const uct_iface_params_t*,
+                                 const uct_iface_config_t*);
+
+UCT_TL_DEFINE_ENTRY(&uct_ib_component, ud_mlx5_mcast, uct_ud_mlx5_query_tl_devices,
+                    uct_ud_mlx5_mcast_iface_t, "UD_MLX5_MCAST_",
+                    uct_ud_mlx5_mcast_iface_config_table, uct_ud_mlx5_mcast_iface_config_t);
+#endif

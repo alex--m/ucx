@@ -628,7 +628,7 @@ typedef ucs_status_t (*ucp_am_callback_t)(void *arg, void *data, size_t length,
  * @param [in]  header        User defined active message header.
  *                            If @a header_length is 0, this value is undefined
  *                            and must not be accessed.
- * @param [in]  header_length Active message header length in bytes. 
+ * @param [in]  header_length Active message header length in bytes.
  * @param [in]  data          Points to the received data if @a
  *                            UCP_AM_RECV_ATTR_FLAG_RNDV flag is not set in
  *                            @ref ucp_am_recv_param_t.recv_attr. Otherwise

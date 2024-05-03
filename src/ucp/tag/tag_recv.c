@@ -98,7 +98,7 @@ static UCS_F_ALWAYS_INLINE ucs_status_ptr_t ucp_tag_recv_common(
                                                  UCS_PTR_BYTE_OFFSET(rdesc + 1,
                                                                      hdr_len),
                                                  recv_len, 1, param);
-        ucp_recv_desc_release(rdesc, NULL);
+        ucp_recv_desc_release(rdesc);
 
         req->status = status;
         UCS_PROFILE_REQUEST_EVENT(req, "complete_imm_tag_recv", 0);
@@ -171,7 +171,7 @@ static UCS_F_ALWAYS_INLINE ucs_status_ptr_t ucp_tag_recv_common(
         ucp_tag_rndv_matched(worker, req, ucp_tag_rndv_rts_from_rdesc(rdesc),
                              rdesc->length);
         UCP_WORKER_STAT_RNDV(worker, RX_UNEXP, 1);
-        ucp_recv_desc_release(rdesc, NULL);
+        ucp_recv_desc_release(rdesc);
     } else {
         ucp_tag_recv_eager_multi(worker, req, rdesc);
     }

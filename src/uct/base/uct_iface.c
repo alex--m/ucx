@@ -347,6 +347,8 @@ void uct_iface_close(uct_iface_h iface)
 void uct_base_iface_progress_enable(uct_iface_h tl_iface, unsigned flags)
 {
     uct_base_iface_t *iface = ucs_derived_of(tl_iface, uct_base_iface_t);
+    ucs_assert(iface->super.ops.iface_progress !=
+               (uct_iface_progress_func_t)ucs_empty_function_do_assert);
     uct_base_iface_progress_enable_cb(iface,
                                       (ucs_callback_t)iface->super.ops.iface_progress,
                                       flags);
@@ -1042,13 +1044,6 @@ static int          uct_thread_safe_iface_is_reachable(const uct_iface_h iface,
     UCT_THREAD_SAFE_IFACE_FUNC(is_reachable, iface, dev_addr, iface_addr)
 }
 
-static int          uct_thread_safe_iface_release_shared_desc(uct_iface_h iface,
-                                                              uct_recv_desc_t *self,
-                                                              void *desc)
-{
-    UCT_THREAD_SAFE_IFACE_FUNC(release_shared_desc, iface, self, desc)
-}
-
 static uct_iface_ops_t thread_safe_ops = {
     .ep_put_short              = uct_thread_safe_put_short,
     .ep_put_bcopy              = uct_thread_safe_ep_put_bcopy,
@@ -1098,8 +1093,7 @@ static uct_iface_ops_t thread_safe_ops = {
     .iface_query               = uct_thread_safe_iface_query,
     .iface_get_device_address  = uct_thread_safe_iface_get_device_address,
     .iface_get_address         = uct_thread_safe_iface_get_address,
-    .iface_is_reachable        = uct_thread_safe_iface_is_reachable,
-    .iface_release_shared_desc = uct_thread_safe_iface_release_shared_desc
+    .iface_is_reachable        = uct_thread_safe_iface_is_reachable
 };
 
 #endif /* ENABLE_MT */
